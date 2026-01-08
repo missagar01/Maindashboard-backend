@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-o2d-backend
+  group: deploy-o2d-lead-batch
   cancel-in-progress: true
 
 jobs:
@@ -20,43 +20,115 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Deploy to fixed folder
+      # Copy code to SAME working directory (inner folder)
+      - name: Prepare app directory
         run: |
-          sudo mkdir -p /var/www/o2d-backend
-          sudo rsync -a --delete --exclude ".env" ./ /var/www/o2d-backend/
-          sudo chown -R ubuntu:ubuntu /var/www/o2d-backend
+          APP_DIR="O2D-BatchCode-Lead-backend-aws"
+          mkdir -p "$APP_DIR"
 
-      - name: Restore .env (persistent on EC2)
+      - name: Restore .env (NEVER DELETE)
         run: |
-          mkdir -p /home/ubuntu/secrets/o2d-backend
+          APP_DIR="O2D-BatchCode-Lead-backend-aws"
           if [ ! -f "/home/ubuntu/secrets/o2d-backend/.env" ]; then
             echo "❌ Missing /home/ubuntu/secrets/o2d-backend/.env"
             exit 1
           fi
-          cp /home/ubuntu/secrets/o2d-backend/.env /var/www/o2d-backend/.env
-          chmod 600 /var/www/o2d-backend/.env
-          echo "✅ .env restored to /var/www/o2d-backend/.env"
+          cp /home/ubuntu/secrets/o2d-backend/.env "$APP_DIR/.env"
+          chmod 600 "$APP_DIR/.env"
+          echo "✅ .env restored"
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install dependencies (in deploy folder)
+      - name: Install dependencies
         run: |
-          cd /var/www/o2d-backend
+          cd O2D-BatchCode-Lead-backend-aws
           npm ci --no-audit --no-fund
 
-      - name: Start/Restart Backend (PM2) from deploy folder
+      - name: Start / Restart PM2 (FINAL)
         run: |
-          cd /var/www/o2d-backend
-          if pm2 describe o2d-backend >/dev/null 2>&1; then
-            pm2 restart o2d-backend --update-env --cwd /var/www/o2d-backend
+          cd O2D-BatchCode-Lead-backend-aws
+
+          # Ensure old wrong app is gone
+          pm2 delete o2d-backend || true
+
+          # Correct app
+          if pm2 describe o2d-lead-batch >/dev/null 2>&1; then
+            pm2 restart o2d-lead-batch --update-env --cwd "$(pwd)"
           else
-            pm2 start server.cjs --name o2d-backend --cwd /var/www/o2d-backend
+            pm2 start server.cjs --name o2d-lead-batch --cwd "$(pwd)"
           fi
+
           pm2 save
 
-      - name: Health check logs (last 40 lines)
-        run: pm2 logs o2d-backend --lines 40 --nostream
+      - name: Health check
+        run: pm2 logs o2d-lead-batch --lines 40 --nostream
+name: Deploy to EC2 (PM2)
 
+on:
+  push:
+    branches: ["master"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-o2d-lead-batch
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Copy code to SAME working directory (inner folder)
+      - name: Prepare app directory
+        run: |
+          APP_DIR="O2D-BatchCode-Lead-backend-aws"
+          mkdir -p "$APP_DIR"
+
+      - name: Restore .env (NEVER DELETE)
+        run: |
+          APP_DIR="O2D-BatchCode-Lead-backend-aws"
+          if [ ! -f "/home/ubuntu/secrets/o2d-backend/.env" ]; then
+            echo "❌ Missing /home/ubuntu/secrets/o2d-backend/.env"
+            exit 1
+          fi
+          cp /home/ubuntu/secrets/o2d-backend/.env "$APP_DIR/.env"
+          chmod 600 "$APP_DIR/.env"
+          echo "✅ .env restored"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          cd O2D-BatchCode-Lead-backend-aws
+          npm ci --no-audit --no-fund
+
+      - name: Start / Restart PM2 (FINAL)
+        run: |
+          cd O2D-BatchCode-Lead-backend-aws
+
+          # Ensure old wrong app is gone
+          pm2 delete o2d-backend || true
+
+          # Correct app
+          if pm2 describe o2d-lead-batch >/dev/null 2>&1; then
+            pm2 restart o2d-lead-batch --update-env --cwd "$(pwd)"
+          else
+            pm2 start server.cjs --name o2d-lead-batch --cwd "$(pwd)"
+          fi
+
+          pm2 save
+
+      - name: Health check
+        run: pm2 logs o2d-lead-batch --lines 40 --nostream
