@@ -129,12 +129,12 @@ async function getDashboardData({
 
       const rows = result.rows || [];
 
-      // Aggregate summary counts to feed the cards (after filters applied)
+
       const totalGateIn = rows.length; // total rows returned
       const totalGateOut = rows.filter((row) => row.GATE_OUT_TIME !== null).length;
       const pendingGateOut = totalGateIn - totalGateOut;
 
-      // Total dispatch: count ALL rows that have a non-null/non-empty invoice number (do not de-duplicate)
+      
       const totalDispatch = rows.filter((row) => {
         const inv = row.INVOICE_NO;
         if (inv === null || inv === undefined) return false;
@@ -155,7 +155,6 @@ async function getDashboardData({
         new Set(rows.map((r) => (r.STATE ? r.STATE.trim() : "")).filter(Boolean))
       );
 
-      // Normalize the row objects to camelCase for frontend ease
       const dataRows = rows.map((r) => ({
         indate: r.INDATE,
         outdate: r.OUTDATE,
