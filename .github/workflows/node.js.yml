@@ -15,59 +15,73 @@ jobs:
     timeout-minutes: 45
 
     steps:
+      # 1️⃣ Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Find app directory (server.cjs)
-        id: finddir
+      # 2️⃣ Set fixed APP_DIR (NO auto find, NO mistake)
+      - name: Set APP_DIR
         run: |
-          APP_DIR="$(dirname "$(find . -maxdepth 4 -name server.cjs -print -quit)")"
-          if [ -z "$APP_DIR" ]; then
-            echo "❌ server.cjs not found"
-            echo "Listing repo root:"
-            ls -la
-            exit 1
-          fi
-          echo "✅ APP_DIR=$APP_DIR"
+          APP_DIR="/home/ubuntu/actions-runner/_work/O2D-BatchCode-Lead-backend-aws/O2D-BatchCode-Lead-backend-aws"
           echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "✅ APP_DIR set to $APP_DIR"
 
-      - name: Restore .env (NEVER DELETE)
+      # 3️⃣ Ensure .env exists (DO NOT COPY / DO NOT DELETE)
+      - name: Verify .env exists (SAFE)
         run: |
-          if [ ! -f "/home/ubuntu/secrets/o2d-backend/.env" ]; then
-            echo "❌ Missing /home/ubuntu/secrets/o2d-backend/.env"
+          if [ ! -f "$APP_DIR/.env" ]; then
+            echo "❌ .env NOT FOUND in $APP_DIR"
+            echo "Create it manually on server once. GitHub will never touch it."
             exit 1
           fi
-          cp /home/ubuntu/secrets/o2d-backend/.env "$APP_DIR/.env"
           chmod 600 "$APP_DIR/.env"
-          echo "✅ .env restored to $APP_DIR/.env"
+          echo "✅ .env exists and is safe"
 
+      # 4️⃣ Verify required env keys (read-only check)
+      - name: Verify required ENV keys
+        run: |
+          cd "$APP_DIR"
+
+          echo "🔍 Checking MAYTAPI variables..."
+          grep -q "MAYTAPI_PRODUCT_ID=" .env || (echo "❌ MAYTAPI_PRODUCT_ID missing" && exit 1)
+          grep -q "MAYTAPI_PHONE_ID=" .env || (echo "❌ MAYTAPI_PHONE_ID missing" && exit 1)
+          grep -q "MAYTAPI_TOKEN=" .env || (echo "❌ MAYTAPI_TOKEN missing" && exit 1)
+
+          echo "✅ MAYTAPI env verified (values hidden)"
+
+      # 5️⃣ Node setup
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
+      # 6️⃣ Install dependencies
       - name: Install dependencies
         run: |
           cd "$APP_DIR"
           npm ci --no-audit --no-fund
 
+      # 7️⃣ PM2 restart (NO env reset)
       - name: Start / Restart PM2
         run: |
           cd "$APP_DIR"
 
-          # remove old wrong app if exists
           pm2 delete o2d-backend || true
 
-          # correct app
           if pm2 describe o2d-lead-batch >/dev/null 2>&1; then
-            pm2 restart o2d-lead-batch --update-env --cwd "$(pwd)"
+            pm2 restart o2d-lead-batch --update-env
           else
-            pm2 start server.cjs --name o2d-lead-batch --cwd "$(pwd)"
+            pm2 start src/o2d/index.js \
+              --name o2d-lead-batch \
+              --cwd "$APP_DIR"
           fi
 
           pm2 save
+          echo "✅ PM2 deployment done"
 
+      # 8️⃣ Health check
       - name: Health check
-        run: pm2 logs o2d-lead-batch --lines 40 --nostream
+        run: |
+          pm2 logs o2d-lead-batch --lines 40 --nostream

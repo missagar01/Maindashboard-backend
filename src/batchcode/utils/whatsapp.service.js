@@ -4,12 +4,50 @@ const path = require("path");
 const fs = require("fs");
 
 // Load environment variables explicitly (for AWS/server environments)
-const envPath = path.resolve(process.cwd(), ".env");
-if (fs.existsSync(envPath)) {
-  const result = dotenv.config({ path: envPath });
+// Try multiple paths to find .env file (PM2 may have different cwd)
+const findEnvFile = () => {
+  const possiblePaths = [
+    path.resolve(process.cwd(), ".env"),                    // Current working directory
+    path.resolve(__dirname, "../../../.env"),               // From batchcode/utils to backend root
+    path.resolve(__dirname, "../../../../.env"),            // Alternative path
+    path.join(process.cwd(), "backend", ".env"),            // If cwd is project root
+    path.join(process.cwd(), ".env"),                      // Direct cwd
+  ];
+  
+  for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+      console.log(`📁 Found .env file at: ${envPath}`);
+      return envPath;
+    }
+  }
+  
+  console.error("⚠️ .env file not found in any of these locations:");
+  possiblePaths.forEach(p => console.error(`   - ${p}`));
+  return null;
+};
+
+const envPath = findEnvFile();
+if (envPath) {
+  const result = dotenv.config({ path: envPath, override: false });
   if (result.error) {
     console.error("⚠️ Error loading .env file:", result.error);
+  } else if (result.parsed) {
+    const loadedCount = Object.keys(result.parsed).length;
+    console.log(`✅ Loaded ${loadedCount} variables from .env file`);
+    // Log MAYTAPI variables status (without showing values)
+    const maytapiVars = ['MAYTAPI_PRODUCT_ID', 'MAYTAPI_PHONE_ID', 'MAYTAPI_TOKEN'];
+    maytapiVars.forEach(key => {
+      if (result.parsed[key]) {
+        console.log(`   ✅ ${key}: Found`);
+      } else {
+        console.log(`   ❌ ${key}: Missing`);
+      }
+    });
+  } else {
+    console.warn("⚠️ .env file exists but no variables were parsed (file might be empty or malformed)");
   }
+} else {
+  console.error("❌ Cannot load .env file - WhatsApp messages will not be sent!");
 }
 
 /* ---------------- UTILS ---------------- */
@@ -87,20 +125,21 @@ const getEnvVar = (key) => {
   if (process.env[key]) {
     return process.env[key];
   }
-  // If not found, try loading .env again and get from parsed result
-  try {
-    const envPath = path.resolve(process.cwd(), ".env");
-    if (fs.existsSync(envPath)) {
-      const result = dotenv.config({ path: envPath });
+  
+  // If not found, try loading .env again from the found path
+  if (envPath && fs.existsSync(envPath)) {
+    try {
+      const result = dotenv.config({ path: envPath, override: false });
       if (result.parsed && result.parsed[key]) {
         // Also set in process.env for future use
         process.env[key] = result.parsed[key];
         return result.parsed[key];
       }
+    } catch (error) {
+      console.error(`⚠️ Error loading ${key} from .env:`, error.message);
     }
-  } catch (error) {
-    console.error(`⚠️ Error loading ${key} from .env:`, error.message);
   }
+  
   return undefined;
 };
 
