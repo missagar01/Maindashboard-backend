@@ -1,4 +1,16 @@
 const https = require("https");
+const dotenv = require("dotenv");
+const path = require("path");
+const fs = require("fs");
+
+// Load environment variables explicitly (for AWS/server environments)
+const envPath = path.resolve(process.cwd(), ".env");
+if (fs.existsSync(envPath)) {
+  const result = dotenv.config({ path: envPath });
+  if (result.error) {
+    console.error("⚠️ Error loading .env file:", result.error);
+  }
+}
 
 /* ---------------- UTILS ---------------- */
 
@@ -69,14 +81,48 @@ const formatImageUrl = (imageUrl) => {
 
 /* ---------------- MAYTAPI CONFIG ---------------- */
 
-const MAYTAPI_PRODUCT_ID = process.env.MAYTAPI_PRODUCT_ID;
-const MAYTAPI_PHONE_ID   = process.env.MAYTAPI_PHONE_ID;
-const MAYTAPI_TOKEN      = process.env.MAYTAPI_TOKEN;
+// Get MAYTAPI credentials from environment (with fallback to dotenv parsed values)
+const getEnvVar = (key) => {
+  // First try process.env (may already be loaded)
+  if (process.env[key]) {
+    return process.env[key];
+  }
+  // If not found, try loading .env again and get from parsed result
+  try {
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      const result = dotenv.config({ path: envPath });
+      if (result.parsed && result.parsed[key]) {
+        // Also set in process.env for future use
+        process.env[key] = result.parsed[key];
+        return result.parsed[key];
+      }
+    }
+  } catch (error) {
+    console.error(`⚠️ Error loading ${key} from .env:`, error.message);
+  }
+  return undefined;
+};
 
-if (!MAYTAPI_PRODUCT_ID || !MAYTAPI_PHONE_ID || !MAYTAPI_TOKEN) {
+const MAYTAPI_PRODUCT_ID = getEnvVar("MAYTAPI_PRODUCT_ID");
+const MAYTAPI_PHONE_ID   = getEnvVar("MAYTAPI_PHONE_ID");
+const MAYTAPI_TOKEN      = getEnvVar("MAYTAPI_TOKEN");
+
+// Debug logging (only show first few characters for security)
+if (MAYTAPI_PRODUCT_ID && MAYTAPI_PHONE_ID && MAYTAPI_TOKEN) {
+  console.log("✅ MAYTAPI credentials loaded:");
+  console.log(`   PRODUCT_ID: ${MAYTAPI_PRODUCT_ID.substring(0, 8)}...`);
+  console.log(`   PHONE_ID: ${MAYTAPI_PHONE_ID}`);
+  console.log(`   TOKEN: ${MAYTAPI_TOKEN.substring(0, 8)}...`);
+} else {
   console.error("❌ MAYTAPI ENV MISSING");
   console.error("Required:");
   console.error("MAYTAPI_PRODUCT_ID, MAYTAPI_PHONE_ID, MAYTAPI_TOKEN");
+  console.error(`Current values:`, {
+    PRODUCT_ID: MAYTAPI_PRODUCT_ID ? "✅ Set" : "❌ Missing",
+    PHONE_ID: MAYTAPI_PHONE_ID ? "✅ Set" : "❌ Missing",
+    TOKEN: MAYTAPI_TOKEN ? "✅ Set" : "❌ Missing"
+  });
 }
 
 /* ---------------- SEND WHATSAPP ---------------- */
