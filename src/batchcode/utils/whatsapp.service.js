@@ -19,6 +19,54 @@ const getGroupIds = (key) => {
   return value.split(",").map(v => v.trim()).filter(Boolean);
 };
 
+// Convert image URL to proper format for WhatsApp
+// Replaces localhost with public URL (BASE_URL from .env)
+// Images are now accessible at /uploads/... (served directly from main app)
+const formatImageUrl = (imageUrl) => {
+  if (!imageUrl || typeof imageUrl !== 'string') return '';
+  
+  try {
+    // Extract path from URL (works with both localhost and proper URLs)
+    let path = '';
+    try {
+      const urlObj = new URL(imageUrl);
+      path = urlObj.pathname;
+    } catch (urlError) {
+      // If URL parsing fails, try to extract path manually
+      const pathMatch = imageUrl.match(/\/uploads\/[^\s"']+/);
+      if (pathMatch) {
+        path = pathMatch[0];
+      } else {
+        return imageUrl; // Return original if can't parse
+      }
+    }
+    
+    // If URL contains localhost, replace with public URL from BASE_URL
+    if (imageUrl.includes('localhost') || imageUrl.includes('127.0.0.1')) {
+      const baseUrl = process.env.BASE_URL || process.env.API_BASE_URL || process.env.PUBLIC_URL;
+      if (baseUrl) {
+        // Ensure baseUrl doesn't end with / and path starts with /
+        const cleanBaseUrl = baseUrl.replace(/\/$/, '');
+        const cleanPath = path.startsWith('/') ? path : `/${path}`;
+        
+        // Images are accessible at /uploads/... (served directly from main app)
+        // No need to add /api/batchcode prefix anymore
+        const finalUrl = `${cleanBaseUrl}${cleanPath}`;
+        return finalUrl;
+      }
+      // If no BASE_URL but localhost, return original
+      // User should set BASE_URL in .env for proper image URLs in WhatsApp
+      return imageUrl;
+    }
+    
+    // Return as is if already a proper URL (not localhost)
+    return imageUrl;
+  } catch (error) {
+    // If any error, return original URL
+    return imageUrl;
+  }
+};
+
 /* ---------------- MAYTAPI CONFIG ---------------- */
 
 const MAYTAPI_PRODUCT_ID = process.env.MAYTAPI_PRODUCT_ID;
@@ -90,6 +138,7 @@ const formatSmsRegisterMessage = (smsData) => {
   
   let message = `SMS Register Fields\n`;
   message += `Timestamp : ${timestamp}\n\n`;
+  message += `UniqueCode : ${uniqueCode}\n\n`;
   message += `Sequence Number : ${smsData.sequence_number || ''}\n\n`;
   message += `Laddle Number : ${smsData.laddle_number || ''}\n\n`;
   message += `SMS Head : ${smsData.sms_head || ''}\n\n`;
@@ -98,8 +147,7 @@ const formatSmsRegisterMessage = (smsData) => {
   message += `Shift Incharge : ${smsData.shift_incharge || ''}\n\n`;
   message += `Temprature : ${smsData.temperature || ''}\n\n`;
   message += `Remarks : ${smsData.remarks || ''}\n\n`;
-  message += `Picture : ${smsData.picture || ''}\n\n`;
-  message += `UniqueCode : ${uniqueCode}\n\n`;
+  message += `Picture : ${formatImageUrl(smsData.picture) || ''}\n\n`;
   message += `Click in this link to generate hot coil,`;
   
   return message;
@@ -117,7 +165,7 @@ const formatReCoilerMessage = (reCoilerData, hotCoilData) => {
     message += `Size : ${hotCoilData.size || ''}\n`;
     message += `Mill Incharge : ${hotCoilData.mill_incharge || ''}\n`;
     message += `Quality Supervisor : ${hotCoilData.quality_supervisor || ''}\n`;
-    message += `Picture : ${hotCoilData.picture || ''}\n`;
+    message += `Picture : ${formatImageUrl(hotCoilData.picture) || ''}\n`;
     message += `Electrical DC Operator : ${hotCoilData.electrical_dc_operator || ''}\n`;
     message += `Remarks : ${hotCoilData.remarks || ''}\n`;
     message += `Strrand1 Temperature : ${hotCoilData.strand1_temperature || 'Close '}\n`;
@@ -126,6 +174,7 @@ const formatReCoilerMessage = (reCoilerData, hotCoilData) => {
   
   message += `Recoiler Register Fields\n`;
   message += `Timestamp : ${formatTimestamp(reCoilerData.sample_timestamp)}\n`;
+  message += `Recoiler Code : ${reCoilerData.unique_code || ''}\n`;
   message += `Hot Coiler Short Code : ${reCoilerData.hot_coiler_short_code || ''}\n`;
   message += `Size : ${reCoilerData.size || ''}\n`;
   message += `Supervisor : ${reCoilerData.supervisor || ''}\n`;
@@ -133,7 +182,7 @@ const formatReCoilerMessage = (reCoilerData, hotCoilData) => {
   message += `Contractor : ${reCoilerData.contractor || ''}\n`;
   message += `Machine Number : ${reCoilerData.machine_number || ''}\n`;
   message += `Welder Name : ${reCoilerData.welder_name || ''}\n`;
-  message += `Recoiler Code : ${reCoilerData.unique_code || ''}\n`;
+ 
   
   return message;
 };
@@ -151,7 +200,7 @@ const formatHotCoilMessage = (hotCoilData, smsData) => {
     message += `SMS Head : ${smsData.sms_head || ''}\n`;
     message += `Furnace Number : ${smsData.furnace_number || ''}\n`;
     message += `Remarks : ${smsData.remarks || ''}\n`;
-    message += `Picture : ${smsData.picture || ''}\n`;
+    message += `Picture : ${formatImageUrl(smsData.picture) || ''}\n`;
     message += `Shift Incharge : ${smsData.shift_incharge || ''}\n`;
     message += `Temprature : ${smsData.temperature || ''}\n`;
     message += `UniqueCode : ${smsData.unique_code || ''}\n\n`;
@@ -159,18 +208,19 @@ const formatHotCoilMessage = (hotCoilData, smsData) => {
   
   message += `Hot Coil Register Fields\n\n`;
   message += `Timestamp : ${formatTimestamp(hotCoilData.sample_timestamp)}\n`;
+  message += `UniqueCode : ${hotCoilData.unique_code || ''}\n`;
   message += `SMS Short Code : ${hotCoilData.sms_short_code || ''}\n`;
   message += `Submission Type: ${hotCoilData.submission_type || 'Hot Coil'}\n`;
   message += `Size : ${hotCoilData.size || ''}\n`;
   message += `Mill Incharge : ${hotCoilData.mill_incharge || ''}\n`;
   message += `Quality Supervisor : ${hotCoilData.quality_supervisor || ''}\n`;
-  message += `Picture : ${hotCoilData.picture || ''}\n`;
+  message += `Picture : ${formatImageUrl(hotCoilData.picture) || ''}\n`;
   message += `Electrical DC Operator : ${hotCoilData.electrical_dc_operator || ''}\n`;
   message += `Shift Supervisor: ${hotCoilData.shift_supervisor || ''}\n`;
   message += `Remarks : ${hotCoilData.remarks || ''}\n`;
   message += `Strrand1 Temperature : ${hotCoilData.strand1_temperature || ''}\n`;
   message += `Strand2 Temperature : ${hotCoilData.strand2_temperature || ''}\n`;
-  message += `UniqueCode : ${hotCoilData.unique_code || ''}\n`;
+ 
   
   return message;
 };
@@ -195,6 +245,7 @@ const formatPipeMillMessage = (pipeMillData, reCoilerData) => {
   
   message += `Pipe Mill Register Field\n\n`;
   message += `"Timestamp : ${formatTimestamp(pipeMillData.sample_timestamp)}\n`;
+  message += `UniqueCode : ${pipeMillData.unique_code || ''}\n`;
   message += `Recoiler Short Code : ${pipeMillData.recoiler_short_code || ''}\n`;
   message += `Mill Number : ${pipeMillData.mill_number || ''}\n`;
   message += `Section : ${pipeMillData.section || ''}\n`;
@@ -207,8 +258,8 @@ const formatPipeMillMessage = (pipeMillData, reCoilerData) => {
   message += `Size : ${pipeMillData.size || ''}\n`;
   message += `Thickness : ${pipeMillData.thickness || ''}\n`;
   message += `Remarks : ${pipeMillData.remarks || ''}\n`;
-  message += `Picture : ${pipeMillData.picture || ''}\n`;
-  message += `UniqueCode : ${pipeMillData.unique_code || ''}\n`;
+  message += `Picture : ${formatImageUrl(pipeMillData.picture) || ''}\n`;
+  
   
   return message;
 };
@@ -216,19 +267,20 @@ const formatPipeMillMessage = (pipeMillData, reCoilerData) => {
 // Format QC Lab Samples message
 const formatQcLabMessage = (qcData) => {
   let message = `Timestamp: ${formatTimestamp(qcData.sample_timestamp)}\n`;
+  message += `Code: ${qcData.unique_code || ''}\n`;
   message += `Final P%: ${qcData.final_p || ''}\n`;
   message += `Final C%: ${qcData.final_c || ''}\n`;
   message += `Sampled Sequence: ${qcData.sequence_code || ''}\n`;
   message += `Sample Tested by: ${qcData.tested_by || ''}\n`;
   message += `Remarks: ${qcData.remarks || ''}\n`;
-  message += `Test Report Picture: ${qcData.report_picture || ''}\n`;
+  message += `Test Report Picture: ${formatImageUrl(qcData.report_picture) || ''}\n`;
   message += `Sampled Furnace Number: ${qcData.furnace_number || ''}\n`;
   message += `Final S%: ${qcData.final_s || ''}\n`;
   message += `Shift: ${qcData.shift_type || ''}\n`;
   message += `Sampled Laddle Number: ${qcData.laddle_number || ''}\n`;
   message += `Final MN%: ${qcData.final_mn || ''}\n`;
   message += `SMS Batch Code: ${qcData.sms_batch_code || ''}\n\n`;
-  message += `Code: ${qcData.unique_code || ''}\n`;
+  
   
   return message;
 };

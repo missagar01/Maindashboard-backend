@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
+const path = require("path");
 
 const sharedAuthRoutes = require("./auth/routes/login.routes.js");
 const rootRoutes = require("./routes/root.routes.js");
@@ -98,6 +99,17 @@ app.use((req, res, next) => {
   
   next();
 });
+
+// Serve uploaded images from /uploads path (MUST be before /api routes)
+// This allows images to be accessible at /uploads/... directly
+const uploadsPath = path.join(process.cwd(), "uploads");
+console.log('📁 Static uploads path:', uploadsPath);
+app.use("/uploads", express.static(uploadsPath, {
+  dotfiles: 'ignore',
+  etag: true,
+  lastModified: true,
+  maxAge: '1d'
+}));
 
 app.use("/api", apiRouter);
 
