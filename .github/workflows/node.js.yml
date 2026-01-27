@@ -89,9 +89,12 @@ jobs:
           pm2 save
           echo "✅ PM2 deployment completed"
 
-      # 8️⃣ Health check (logs only)
+
+
       - name: Health check
         run: |
           pm2 logs o2d-lead-batch --lines 40 --nostream
 
           
+
+

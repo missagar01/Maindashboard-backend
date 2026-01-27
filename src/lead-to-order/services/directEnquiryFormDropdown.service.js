@@ -36,11 +36,14 @@ const getDropdownValues = async () => {
       };
     });
 
+    const locationsQ = await pool.query(`SELECT DISTINCT location FROM dropdown WHERE location IS NOT NULL AND location <> ''`).catch(() => ({ rows: [] }));
+
     return {
       leadSources: leadSourceQ.rows.map(r => r.lead_source).filter(Boolean),
       enquiryApproaches: enquiryApproachQ.rows.map(r => r.enquiry_approach).filter(Boolean),
       scNames: scNameQ.rows.map(r => r.sales_coordinator_name).filter(Boolean),
       itemNames: itemNameQ.rows.map(r => r.item_name).filter(Boolean),
+      locations: locationsQ.rows.map(r => r.location).filter(Boolean),
 
       // ⭐ ONLY DIRECT COMPANIES
       directCompanyNames,
