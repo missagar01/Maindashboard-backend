@@ -2,10 +2,10 @@
   "name": "backend",
   "version": "1.0.0",
   "type": "commonjs",
-  "main": "server.cjs",
+  "main": "server.js",
   "scripts": {
-    "start": "node server.cjs",
-    "dev": "nodemon server.cjs"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.927.0",
@@ -34,12 +34,12 @@
   },
   "nodemonConfig": {
     "watch": [
-      "server.cjs",
+      "server.js",
       "src",
       "config"
     ],
     "ext": "js,cjs,json",
-    "exec": "node server.cjs",
+    "exec": "node server.js",
     "ignore": [
       "node_modules",
       "*.log"

@@ -1,220 +1,107 @@
-const redis = require('redis');
+const { createClient } = require("redis");
 
-// Connection state
-let client = null;
-let isConnecting = false;
-let isConnected = false;
-let connectionPromise = null;
-let reconnectTimeout = null;
-let reconnectAttempts = 0;
+const REDIS_URL = process.env.REDIS_URL
 
-// Configuration
-const MAX_RECONNECT_ATTEMPTS = 5;
-const INITIAL_RECONNECT_DELAY = 1000; // 1 second
-const MAX_RECONNECT_DELAY = 30000; // 30 seconds
-const CONNECTION_TIMEOUT = 5000; // 5 seconds
-
-// Create Redis client with proper configuration
-function createClient() {
-  if (client && client.isOpen) {
-    return client;
-  }
-
-  const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-  
-  client = redis.createClient({
-    url: redisUrl,
-    socket: {
-      reconnectStrategy: (retries) => {
-        if (retries > MAX_RECONNECT_ATTEMPTS) {
-          console.warn('⚠️ Redis: Max reconnection attempts reached. Redis will be disabled.');
-          return false; // Stop reconnecting
-        }
-        const delay = Math.min(
-          INITIAL_RECONNECT_DELAY * Math.pow(2, retries),
-          MAX_RECONNECT_DELAY
-        );
-        console.log(`🔄 Redis: Reconnecting in ${delay}ms (attempt ${retries + 1}/${MAX_RECONNECT_ATTEMPTS})`);
-        return delay;
-      },
-      connectTimeout: CONNECTION_TIMEOUT,
+/**
+ * SINGLE Redis instance
+ */
+const client = createClient({
+  url: REDIS_URL,
+  socket: {
+    connectTimeout: 5000,
+    reconnectStrategy: (retries) => {
+      // Exponential backoff (handled internally, no state needed)
+      return Math.min(retries * 100, 3000);
     },
-  });
+  },
+});
 
-  // Event handlers
-  client.on('connect', () => {
-    isConnected = true;
-    reconnectAttempts = 0;
-    console.log('✅ Redis connected');
-  });
+let redisEnabled = true;
 
-  client.on('ready', () => {
-    isConnected = true;
-    reconnectAttempts = 0;
-    console.log('✅ Redis ready');
-  });
+/**
+ * Attach minimal listeners (no heavy logic)
+ */
+client.on("ready", () => {
+  redisEnabled = true;
+  console.log("✅ Redis ready");
+});
 
-  client.on('error', (err) => {
-    // Only log errors if we're not in a reconnection state
-    if (!err.message.includes('ECONNREFUSED') || reconnectAttempts === 0) {
-      console.warn(`⚠️ Redis error: ${err.message}`);
+
+let lastError = null;
+
+client.on("error", (err) => {
+  redisEnabled = false;
+  const msg = err.message;
+
+  // Suppress repeated ECONNREFUSED or common connection errors to avoid spam
+  if (msg.includes("ECONNREFUSED")) {
+    if (lastError !== "ECONNREFUSED") {
+      console.warn("⚠️ Redis connection refused (caching disabled, retrying...)");
+      lastError = "ECONNREFUSED";
     }
-    isConnected = false;
-  });
-
-  client.on('end', () => {
-    isConnected = false;
-    console.log('🔌 Redis connection closed');
-  });
-
-  client.on('reconnecting', () => {
-    reconnectAttempts++;
-    console.log(`🔄 Redis reconnecting... (attempt ${reconnectAttempts})`);
-  });
-
-  return client;
-}
-
-// Connect to Redis with retry logic
-async function connect() {
-  // If already connected, return
-  if (isConnected && client && client.isOpen) {
-    return client;
+  } else {
+    console.warn("⚠️ Redis error:", msg);
+    lastError = msg;
   }
+});
 
-  // If already connecting, return the existing promise
-  if (isConnecting && connectionPromise) {
-    return connectionPromise;
-  }
+client.on("connect", () => {
+  // Reset error state on successful connection attempt
+  // Note: 'ready' is better for ensuring usability, but 'connect' means we found the server
+  lastError = null;
+});
 
-  // Start connection process
-  isConnecting = true;
-  connectionPromise = (async () => {
-    try {
-      if (!client) {
-        createClient();
-      }
+client.on("end", () => {
+  redisEnabled = false;
+  console.warn("⚠️ Redis connection closed");
+});
 
-      // Check if already open
-      if (client.isOpen) {
-        isConnected = true;
-        isConnecting = false;
-        return client;
-      }
-
-      // Connect with timeout
-      await Promise.race([
-        client.connect(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Connection timeout')), CONNECTION_TIMEOUT)
-        )
-      ]);
-
-      isConnected = true;
-      isConnecting = false;
-      reconnectAttempts = 0;
-      return client;
-    } catch (err) {
-      isConnected = false;
-      isConnecting = false;
-      connectionPromise = null;
-      
-      // Don't throw - allow graceful degradation
-      console.warn(`⚠️ Redis connection failed: ${err.message}`);
-      console.warn('⚠️ Application will continue without Redis caching');
-      return null;
-    }
-  })();
-
-  return connectionPromise;
-}
-
-// Safe Redis operations wrapper
-async function safeOperation(operation, fallback = null) {
+/**
+ * Fire-and-forget connect (non-blocking)
+ */
+(async () => {
   try {
-    // Ensure connection
-    const redisClient = await connect();
-    if (!redisClient || !redisClient.isOpen) {
-      return fallback;
-    }
-
-    return await operation(redisClient);
+    await client.connect();
   } catch (err) {
-    // Log only if it's not a connection error (to avoid spam)
-    if (!err.message.includes('ECONNREFUSED') && !err.message.includes('Connection closed')) {
-      console.warn(`⚠️ Redis operation failed: ${err.message}`);
-    }
-    return fallback;
+    redisEnabled = false;
+    console.warn("⚠️ Redis disabled:", err.message);
   }
+})();
+
+/**
+ * FAST guard — no async connect per request
+ */
+function isAvailable() {
+  return redisEnabled && client.isOpen;
 }
 
-// Public API
-const redisClient = {
-  // Get value
+/**
+ * PUBLIC API (thin wrappers only)
+ */
+module.exports = {
+  isAvailable,
+
   async get(key) {
-    return await safeOperation(async (client) => {
-      return await client.get(key);
-    }, null);
+    if (!isAvailable()) return null;
+    return client.get(key);
   },
 
-  // Set value with expiration
-  async setEx(key, seconds, value) {
-    return await safeOperation(async (client) => {
-      return await client.setEx(key, seconds, value);
-    }, null);
+  async setEx(key, ttl, value) {
+    if (!isAvailable()) return null;
+    return client.setEx(key, ttl, value);
   },
 
-  // Set value
-  async set(key, value) {
-    return await safeOperation(async (client) => {
-      return await client.set(key, value);
-    }, null);
-  },
-
-  // Delete key
   async del(key) {
-    return await safeOperation(async (client) => {
-      return await client.del(key);
-    }, null);
+    if (!isAvailable()) return null;
+    return client.del(key);
   },
 
-  // Check if connected
-  isConnected() {
-    return isConnected && client && client.isOpen;
-  },
-
-  // Get connection status
-  getStatus() {
-    return {
-      connected: isConnected && client && client.isOpen,
-      connecting: isConnecting,
-      reconnectAttempts,
-    };
-  },
-
-  // Manually connect (for initialization)
-  connect,
-
-  // Disconnect
-  async disconnect() {
-    if (client && client.isOpen) {
-      try {
-        await client.quit();
-        isConnected = false;
-        console.log('✅ Redis disconnected');
-      } catch (err) {
-        console.warn(`⚠️ Error disconnecting Redis: ${err.message}`);
-      }
-    }
+  async quit() {
+    if (client.isOpen) await client.quit();
   },
 };
 
-// Initialize connection if REDIS_URL is set (optional - lazy connection is preferred)
-if (process.env.REDIS_URL) {
-  // Don't block startup - connect in background
-  connect().catch(() => {
-    // Already handled in connect()
-  });
-}
 
-module.exports = redisClient;
+
+
+

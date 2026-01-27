@@ -24,36 +24,36 @@ console.log('🔒 CORS Configuration:', {
 
 // CORS configuration - simplified and explicit
 const corsOptions = corsOrigins.includes("*")
-  ? { 
-      origin: true, // Allow all origins
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-      exposedHeaders: ['Content-Range', 'X-Content-Range'],
-      preflightContinue: false,
-      optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
-    }
-  : { 
-      origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, Postman, curl)
-        if (!origin) {
-          return callback(null, true);
-        }
-        // Check if origin is in allowed list
-        if (corsOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          console.warn(`CORS: Origin ${origin} not allowed. Allowed origins: ${corsOrigins.join(', ')}`);
-          callback(null, false); // Return false instead of error to allow CORS middleware to handle it
-        }
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-      exposedHeaders: ['Content-Range', 'X-Content-Range'],
-      preflightContinue: false,
-      optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
-    };
+  ? {
+    origin: true, // Allow all origins
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    preflightContinue: false,
+    optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
+  }
+  : {
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, Postman, curl)
+      if (!origin) {
+        return callback(null, true);
+      }
+      // Check if origin is in allowed list
+      if (corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`CORS: Origin ${origin} not allowed. Allowed origins: ${corsOrigins.join(', ')}`);
+        callback(null, false); // Return false instead of error to allow CORS middleware to handle it
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    preflightContinue: false,
+    optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
+  };
 
 const apiRouter = express.Router();
 apiRouter.use("/o2d", o2dRoutes);
@@ -81,9 +81,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
   // Store original json method
   const originalJson = res.json.bind(res);
-  
+
   // Override json to ensure CORS headers are set
-  res.json = function(data) {
+  res.json = function (data) {
     const origin = req.headers.origin;
     if (origin) {
       const isAllowed = corsOrigins.includes("*") || corsOrigins.includes(origin);
@@ -96,7 +96,7 @@ app.use((req, res, next) => {
     }
     return originalJson(data);
   };
-  
+
   next();
 });
 
@@ -133,7 +133,7 @@ app.use((err, req, res, next) => {
   if (err.stack) {
     console.error('Stack:', err.stack);
   }
-  
+
   // Ensure CORS headers are ALWAYS set, even on errors
   const origin = req.headers.origin;
   if (origin) {
@@ -148,12 +148,12 @@ app.use((err, req, res, next) => {
     // If allowing all origins and no origin header, set wildcard
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
-  
+
   // Don't send response if headers already sent
   if (res.headersSent) {
     return next(err);
   }
-  
+
   // Send error response
   const statusCode = err.statusCode || err.status || 500;
   res.status(statusCode).json({

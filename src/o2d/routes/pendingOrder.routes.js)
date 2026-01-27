@@ -1,0 +1,7 @@
+const express = require('express'
+const router = express.Router(
+const pendingOrderController = require('../controllers/pendingOrder.controller'
+router.get('/pending-orders', pendingOrderController.getPendingOrders
+router.get('/completed-orders', pendingOrderController.getCompletedOrders
+router.get('/pending', pendingOrderController.getPendingOrders
+router.get('/history', pendingOrderController.getCompletedOrders

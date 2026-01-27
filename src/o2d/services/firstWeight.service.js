@@ -5,7 +5,7 @@ const { generateCacheKey, withCache, DEFAULT_TTL } = require("../utils/cacheHelp
 // 🟢 Pending with Filters
 async function getPendingFirstWeight(offset = 0, limit = 50, customer = '', search = '') {
   const cacheKey = generateCacheKey("first-weight:pending", { offset, limit, customer, search });
-  
+
   return await withCache(cacheKey, DEFAULT_TTL.PENDING, async () => {
     let whereClause = `
     WHERE t.entity_code = 'SR'
@@ -16,14 +16,14 @@ async function getPendingFirstWeight(offset = 0, limit = 50, customer = '', sear
       AND t.vrdate >= TRUNC(SYSDATE)
   `;
 
-  // Add customer filter
-  if (customer) {
-    whereClause += ` AND UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${customer.replace(/'/g, "''")}%')`;
-  }
+    // Add customer filter
+    if (customer) {
+      whereClause += ` AND UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${customer.replace(/'/g, "''")}%')`;
+    }
 
-  // Add search filter
-  if (search) {
-    whereClause += ` AND (
+    // Add search filter
+    if (search) {
+      whereClause += ` AND (
       UPPER(t.order_vrno) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(t.vrno) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
@@ -32,17 +32,17 @@ async function getPendingFirstWeight(offset = 0, limit = 50, customer = '', sear
       UPPER(t.driver_mobile) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(t.driver_driving_license) LIKE UPPER('%${search.replace(/'/g, "''")}%')
     )`;
-  }
+    }
 
-  // Count query
-  const countQuery = `
+    // Count query
+    const countQuery = `
     SELECT COUNT(*) AS total_count
     FROM view_gatetran_engine t
     ${whereClause}
   `;
 
-  // Data query
-  const dataQuery = `
+    // Data query
+    const dataQuery = `
     SELECT * FROM (
       SELECT a.*, ROWNUM rnum FROM (
         SELECT 
@@ -63,28 +63,28 @@ async function getPendingFirstWeight(offset = 0, limit = 50, customer = '', sear
     WHERE rnum > :startRow
   `;
 
-  const params = { startRow: offset, endRow: offset + limit };
-  let connection;
-  try {
-    connection = await getConnection();
-    const [countResult, dataResult] = await Promise.all([
-      connection.execute(countQuery, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
-      connection.execute(dataQuery, params, { outFormat: oracledb.OUT_FORMAT_OBJECT })
-    ]);
-    return {
-      data: dataResult.rows,
-      totalCount: countResult.rows[0]?.TOTAL_COUNT || 0
-    };
-  } finally {
-    if (connection) await connection.close();
-  }
+    const params = { startRow: offset, endRow: offset + limit };
+    let connection;
+    try {
+      connection = await getConnection();
+      const [countResult, dataResult] = await Promise.all([
+        connection.execute(countQuery, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+        connection.execute(dataQuery, params, { outFormat: oracledb.OUT_FORMAT_OBJECT })
+      ]);
+      return {
+        data: dataResult.rows,
+        totalCount: countResult.rows[0]?.TOTAL_COUNT || 0
+      };
+    } finally {
+      if (connection) await connection.close();
+    }
   });
 }
 
 // 🟣 History with Filters
 async function getFirstWeightHistory(offset = 0, limit = 50, customer = '', search = '') {
   const cacheKey = generateCacheKey("first-weight:history", { offset, limit, customer, search });
-  
+
   return await withCache(cacheKey, DEFAULT_TTL.HISTORY, async () => {
     let whereClause = `
     WHERE t.entity_code = 'SR'
@@ -99,14 +99,14 @@ async function getFirstWeightHistory(offset = 0, limit = 50, customer = '', sear
       AND t.vrdate >= TO_DATE('01-APR-2025', 'DD-MON-YYYY')
   `;
 
-  // Add customer filter
-  if (customer) {
-    whereClause += ` AND UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${customer.replace(/'/g, "''")}%')`;
-  }
+    // Add customer filter
+    if (customer) {
+      whereClause += ` AND UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${customer.replace(/'/g, "''")}%')`;
+    }
 
-  // Add search filter
-  if (search) {
-    whereClause += ` AND (
+    // Add search filter
+    if (search) {
+      whereClause += ` AND (
       UPPER(t.order_vrno) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(t.vrno) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(lhs_utility.get_name('acc_code', t.acc_code)) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
@@ -116,17 +116,17 @@ async function getFirstWeightHistory(offset = 0, limit = 50, customer = '', sear
       UPPER(t.driver_driving_license) LIKE UPPER('%${search.replace(/'/g, "''")}%') OR
       UPPER(t.wslip_no) LIKE UPPER('%${search.replace(/'/g, "''")}%')
     )`;
-  }
+    }
 
-  // Count query
-  const countQuery = `
+    // Count query
+    const countQuery = `
     SELECT COUNT(DISTINCT t.vrno) AS total_count
     FROM view_gatetran_engine t
     ${whereClause}
   `;
 
-  // Data query
-  const dataQuery = `
+    // Data query
+    const dataQuery = `
     SELECT * FROM (
       SELECT a.*, ROWNUM rnum FROM (
         SELECT DISTINCT
@@ -154,25 +154,25 @@ async function getFirstWeightHistory(offset = 0, limit = 50, customer = '', sear
     WHERE rnum > :startRow
   `;
 
-  const params = { startRow: offset, endRow: offset + limit };
-  let connection;
+    const params = { startRow: offset, endRow: offset + limit };
+    let connection;
 
-  try {
-    connection = await getConnection();
-    const [countResult, dataResult] = await Promise.all([
-      connection.execute(countQuery, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
-      connection.execute(dataQuery, params, { outFormat: oracledb.OUT_FORMAT_OBJECT })
-    ]);
-    return {
-      data: dataResult.rows,
-      totalCount: countResult.rows[0]?.TOTAL_COUNT || 0
-    };
-  } catch (error) {
-    console.error("Error fetching all first weight history:", error);
-    throw error;
-  } finally {
-    if (connection) await connection.close();
-  }
+    try {
+      connection = await getConnection();
+      const [countResult, dataResult] = await Promise.all([
+        connection.execute(countQuery, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+        connection.execute(dataQuery, params, { outFormat: oracledb.OUT_FORMAT_OBJECT })
+      ]);
+      return {
+        data: dataResult.rows,
+        totalCount: countResult.rows[0]?.TOTAL_COUNT || 0
+      };
+    } catch (error) {
+      console.error("Error fetching all first weight history:", error);
+      throw error;
+    } finally {
+      if (connection) await connection.close();
+    }
   });
 }
 

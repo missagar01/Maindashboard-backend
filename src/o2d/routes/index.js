@@ -8,6 +8,7 @@ const paymentRoutes = require("./payment.routes.js");
 const authRoutes = require("./auth.routes.js");
 const dashboardRoutes = require("./dashboard.routes.js");
 const complaintRoutes = require("./complaint.routes.js");
+const pendingOrderRoutes = require("./pendingOrder.routes.js");
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use("/payment", paymentRoutes);
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/complaint", complaintRoutes);
+router.use("/orders", pendingOrderRoutes);
 
 module.exports = router;

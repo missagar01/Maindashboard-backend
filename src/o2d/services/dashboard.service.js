@@ -122,7 +122,7 @@ async function getDashboardData({
       if (!connection) {
         throw new Error("Failed to establish Oracle database connection");
       }
-      
+
       const result = await connection.execute(BASE_DASHBOARD_QUERY, binds, {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
       });
@@ -134,7 +134,7 @@ async function getDashboardData({
       const totalGateOut = rows.filter((row) => row.GATE_OUT_TIME !== null).length;
       const pendingGateOut = totalGateIn - totalGateOut;
 
-      
+
       const totalDispatch = rows.filter((row) => {
         const inv = row.INVOICE_NO;
         if (inv === null || inv === undefined) return false;
@@ -197,7 +197,7 @@ async function getDashboardData({
       console.error("❌ Error in getDashboardData:", error.message);
       if (shouldUseMockData) {
         console.warn("⚠️ Serving mock dashboard data because Oracle is unavailable.");
-        
+
       }
       // Re-throw with more context
       throw new Error(`Dashboard data fetch failed: ${error.message}`);
