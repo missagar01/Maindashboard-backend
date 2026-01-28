@@ -108,41 +108,48 @@ order by t.vrdate )
 
 const GD_QUERY = `
 SELECT
-   (
-     SELECT ROUND(SUM(summary) / SUM(qtyissued), 0)
-     FROM (
-       SELECT t.qtyissued,
-              ( COALESCE(AVG(t.afrate3),0)
-              + COALESCE(AVG(t.afrate4),0)
-              + (COALESCE(AVG(t.fc_rate),0) - COALESCE(AVG(t.contract_rate),0))
-              ) * COALESCE(SUM(t.qtyissued),0) AS summary
-       FROM view_itemtran_engine t
-       WHERE t.entity_code = 'SR'
-         AND t.series = 'SA'
-         AND t.div_code = 'PM'
-         AND t.vrdate >= TO_DATE(:p_from_date, 'YYYY-MM-DD')
-         AND t.vrdate <  TO_DATE(:p_to_date,   'YYYY-MM-DD') + 1
-       GROUP BY t.emp_code, t.item_name, t.contract_vrno,
-                t.qtyissued, t.fc_rate, t.contract_rate, t.afrate3, t.afrate4
-     )
+   /* Monthly GD */
+   COALESCE(
+     (
+       SELECT ROUND(SUM(summary) / NULLIF(SUM(qtyissued), 0), 0)
+       FROM (
+         SELECT t.qtyissued,
+                ( COALESCE(AVG(t.afrate3),0)
+                + COALESCE(AVG(t.afrate4),0)
+                + (COALESCE(AVG(t.fc_rate),0) - COALESCE(AVG(t.contract_rate),0))
+                ) * COALESCE(SUM(t.qtyissued),0) AS summary
+         FROM view_itemtran_engine t
+         WHERE t.entity_code = 'SR'
+           AND t.series = 'SA'
+           AND t.div_code = 'PM'
+           AND t.vrdate >= TRUNC(SYSDATE,'MM')
+           AND t.vrdate < TRUNC(SYSDATE) + 1
+         GROUP BY t.emp_code, t.item_name, t.contract_vrno,
+                  t.qtyissued, t.fc_rate, t.contract_rate, t.afrate3, t.afrate4
+       )
+     ), 0
    ) AS monthly_gd,
-   (
-     SELECT ROUND(SUM(summary) / SUM(qtyissued), 0)
-     FROM (
-       SELECT t.qtyissued,
-              ( COALESCE(AVG(t.afrate3),0)
-              + COALESCE(AVG(t.afrate4),0)
-              + (COALESCE(AVG(t.fc_rate),0) - COALESCE(AVG(t.contract_rate),0))
-              ) * COALESCE(SUM(t.qtyissued),0) AS summary
-       FROM view_itemtran_engine t
-       WHERE t.entity_code = 'SR'
-         AND t.series = 'SA'
-         AND t.div_code = 'PM'
-         AND t.vrdate >= TRUNC(TO_DATE(:p_to_date, 'YYYY-MM-DD'))
-         AND t.vrdate <  TRUNC(TO_DATE(:p_to_date, 'YYYY-MM-DD')) + 1
-       GROUP BY t.emp_code, t.item_name, t.contract_vrno,
-                t.qtyissued, t.fc_rate, t.contract_rate, t.afrate3, t.afrate4
-     )
+
+   /* Daily GD */
+   COALESCE(
+     (
+       SELECT ROUND(SUM(summary) / NULLIF(SUM(qtyissued), 0), 0)
+       FROM (
+         SELECT t.qtyissued,
+                ( COALESCE(AVG(t.afrate3),0)
+                + COALESCE(AVG(t.afrate4),0)
+                + (COALESCE(AVG(t.fc_rate),0) - COALESCE(AVG(t.contract_rate),0))
+                ) * COALESCE(SUM(t.qtyissued),0) AS summary
+         FROM view_itemtran_engine t
+         WHERE t.entity_code = 'SR'
+           AND t.series = 'SA'
+           AND t.div_code = 'PM'
+           AND t.vrdate >= TRUNC(SYSDATE)
+           AND t.vrdate < TRUNC(SYSDATE) + 1
+         GROUP BY t.emp_code, t.item_name, t.contract_vrno,
+                  t.qtyissued, t.fc_rate, t.contract_rate, t.afrate3, t.afrate4
+       )
+     ), 0
    ) AS daily_gd
 FROM dual
 `;
@@ -260,7 +267,7 @@ async function getDashboardData({
         connection.execute(SAUDA_RATE_TREND_QUERY, summaryDateBinds, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         }),
-        connection.execute(GD_QUERY, summaryDateBinds, {
+        connection.execute(GD_QUERY, {}, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         })
       ]);
