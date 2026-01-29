@@ -102,8 +102,8 @@ const createUserHandler = async (req, res) => {
     console.error("Error code:", error.code);
     console.error("Error detail:", error.detail);
     const errorMessage = error.detail || error.message || "Failed to create user";
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       message: errorMessage,
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });

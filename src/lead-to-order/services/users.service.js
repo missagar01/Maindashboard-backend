@@ -3,7 +3,7 @@ const { getLoginPool } = require("../../../config/pg.js");
 
 // Create a pool wrapper for users service with better error handling
 const pool = {
-  query: async function(text, params) {
+  query: async function (text, params) {
     try {
       const p = getLoginPool();
       if (!p) {
@@ -22,6 +22,7 @@ const pool = {
 const PUBLIC_COLUMNS = [
   "id",
   "user_name",
+  "password",
   "email_id",
   "number",
   "department",
@@ -131,7 +132,7 @@ async function createUser(userData) {
   ];
 
   const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
-  
+
   try {
     const result = await pool.query(
       `
