@@ -6,6 +6,7 @@ const { getLocalPostgresPort, isTunnelActive } = require('./sshTunnel');
 let mainPool;
 let authPool;
 
+
 // Function to reset main pool (useful for connection errors)
 const resetMainPool = () => {
   if (mainPool) {
@@ -501,7 +502,7 @@ const ensureAuthUsersTable = async () => {
     )
   `;
   await authPool.query(ddl);
-  
+
   // Check if id column is BIGINT (not auto-increment) and convert to BIGSERIAL
   try {
     const colCheck = await authPool.query(`
@@ -513,34 +514,34 @@ const ensureAuthUsersTable = async () => {
         AND table_name = 'users'
         AND column_name = 'id'
     `);
-    
+
     if (colCheck.rows.length > 0) {
       const colInfo = colCheck.rows[0];
       // If id is BIGINT without a default (not auto-increment), convert it
       if (colInfo.data_type === 'bigint' && !colInfo.column_default) {
         console.log('Converting id column from BIGINT to BIGSERIAL (auto-increment)...');
-        
+
         // Create sequence if it doesn't exist
         await authPool.query(`
           CREATE SEQUENCE IF NOT EXISTS users_id_seq;
         `);
-        
+
         // Set the sequence to start from max(id) + 1
         const maxIdResult = await authPool.query(`
           SELECT COALESCE(MAX(id), 0) as max_id FROM public.users
         `);
         const maxId = parseInt(maxIdResult.rows[0].max_id) || 0;
-        
+
         await authPool.query(`
           SELECT setval('users_id_seq', ${maxId + 1}, false);
         `);
-        
+
         // Alter the column to use the sequence as default
         await authPool.query(`
           ALTER TABLE public.users 
           ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
         `);
-        
+
         console.log('✅ Successfully converted id column to auto-increment');
       } else if (colInfo.data_type === 'bigint' && colInfo.column_default) {
         // Already has a default, just ensure sequence is set correctly
@@ -548,7 +549,7 @@ const ensureAuthUsersTable = async () => {
           SELECT COALESCE(MAX(id), 0) as max_id FROM public.users
         `);
         const maxId = parseInt(maxIdResult.rows[0].max_id) || 0;
-        
+
         await authPool.query(`
           CREATE SEQUENCE IF NOT EXISTS users_id_seq;
           SELECT setval('users_id_seq', ${maxId + 1}, false);
@@ -558,7 +559,7 @@ const ensureAuthUsersTable = async () => {
   } catch (alterErr) {
     console.warn('Could not alter id column to auto-increment:', alterErr.message);
   }
-  
+
   // Ensure the sequence exists and is properly set up for auto-increment (for new tables)
   try {
     const seqCheck = await authPool.query(`
@@ -566,7 +567,7 @@ const ensureAuthUsersTable = async () => {
         SELECT 1 FROM pg_class WHERE relname = 'users_id_seq'
       )
     `);
-    
+
     if (!seqCheck.rows[0].exists) {
       // Create sequence if it doesn't exist
       await authPool.query(`
@@ -580,7 +581,7 @@ const ensureAuthUsersTable = async () => {
         SELECT COALESCE(MAX(id), 0) as max_id FROM public.users
       `);
       const maxId = parseInt(maxIdResult.rows[0].max_id) || 0;
-      
+
       await authPool.query(`
         ALTER TABLE public.users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
         SELECT setval('users_id_seq', ${maxId + 1}, false);
@@ -589,9 +590,9 @@ const ensureAuthUsersTable = async () => {
   } catch (seqErr) {
     console.warn('Could not set up users_id_seq sequence:', seqErr.message);
   }
-  
+
   await authPool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_name ON public.users (user_name)');
-  
+
   // Drop existing employee_id index if it exists (with CASCADE to handle dependencies)
   try {
     await authPool.query('DROP INDEX IF EXISTS public.idx_users_employee_id CASCADE');
@@ -599,7 +600,7 @@ const ensureAuthUsersTable = async () => {
     // Ignore errors if index doesn't exist
     console.log('Note: Could not drop idx_users_employee_id (may not exist):', err.message);
   }
-  
+
   // Clean up duplicate non-NULL employee_id values before creating unique index
   try {
     await authPool.query(`
@@ -616,7 +617,7 @@ const ensureAuthUsersTable = async () => {
   } catch (err) {
     console.warn('Could not clean up duplicate employee_id values:', err.message);
   }
-  
+
   // Create partial unique index for employee_id (only when NOT NULL)
   try {
     await authPool.query(`
@@ -643,7 +644,7 @@ const ensureAuthUsersTable = async () => {
       console.warn('Could not create idx_users_employee_id index:', err.message);
     }
   }
-  
+
   // Ensure created_at has DEFAULT NOW() if it exists
   try {
     await authPool.query(`
@@ -654,7 +655,7 @@ const ensureAuthUsersTable = async () => {
     // Column might not exist yet, that's okay
     console.log('Note: Could not set created_at default (may not exist yet):', err.message);
   }
-  
+
   // Add missing columns if they don't exist (for existing tables)
   const columnsToAdd = [
     { name: 'status', type: 'VARCHAR(50)', hasDefault: true, defaultValue: 'active' },
@@ -667,7 +668,7 @@ const ensureAuthUsersTable = async () => {
     { name: 'remark', type: 'TEXT', hasDefault: false },
     { name: 'created_at', type: 'TIMESTAMPTZ', hasDefault: true, defaultValue: 'NOW()' },
   ];
-  
+
   for (const column of columnsToAdd) {
     try {
       // Check if column exists
@@ -678,7 +679,7 @@ const ensureAuthUsersTable = async () => {
         AND table_name = 'users' 
         AND column_name = $1
       `, [column.name]);
-      
+
       if (checkResult.rows.length === 0) {
         // Column doesn't exist, add it
         let alterQuery = `ALTER TABLE public.users ADD COLUMN ${column.name} ${column.type}`;
@@ -708,7 +709,7 @@ const ensureAuthUsersTable = async () => {
             AND table_name = 'users' 
             AND column_name = 'given_by'
         `);
-        
+
         if (colInfo.rows.length > 0) {
           const currentSize = colInfo.rows[0].character_maximum_length;
           if (currentSize && currentSize < 255) {
@@ -722,7 +723,7 @@ const ensureAuthUsersTable = async () => {
       // Don't throw - continue with other columns
     }
   }
-  
+
   logger.info('Ensured auth users table exists with all required columns');
 };
 
@@ -740,7 +741,7 @@ const connectDatabase = async () => {
   // Retry connection with exponential backoff
   const maxRetries = 3;
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       mainPool = new Pool({
@@ -752,7 +753,7 @@ const connectDatabase = async () => {
         keepAlive: true,
         keepAliveInitialDelayMillis: 10000,
       });
-      
+
       mainPool.on('error', (error) => {
         logger.error('Unexpected PostgreSQL client error', error);
         // Reset pool on error to force reconnection
@@ -761,7 +762,7 @@ const connectDatabase = async () => {
           resetMainPool();
         }
       });
-      
+
       // Handle connection errors
       mainPool.on('connect', (client) => {
         client.on('error', (err) => {
@@ -777,11 +778,11 @@ const connectDatabase = async () => {
       const testTimeout = process.env.SSH_HOST ? 30000 : 15000;
       await Promise.race([
         mainPool.query('SELECT 1'),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Connection timeout')), testTimeout)
         )
       ]);
-      
+
       logger.info('Main database connection established');
 
       await ensureQcLabSamplesTable();
@@ -798,7 +799,7 @@ const connectDatabase = async () => {
       lastError = error;
       const errorMsg = error.message || 'Unknown error';
       logger.warn(`Database connection attempt ${attempt}/${maxRetries} failed:`, errorMsg);
-      
+
       if (mainPool) {
         try {
           await mainPool.end();
@@ -807,7 +808,7 @@ const connectDatabase = async () => {
         }
         mainPool = null;
       }
-      
+
       if (attempt < maxRetries) {
         // Longer delay for SSH tunnel connections
         const baseDelay = process.env.SSH_HOST ? 2000 : 1000;
@@ -817,7 +818,7 @@ const connectDatabase = async () => {
       }
     }
   }
-  
+
   logger.error('Database connection failed after all retries', lastError);
   throw lastError;
 };
@@ -836,7 +837,7 @@ const connectAuthDatabase = async () => {
   // Retry connection with exponential backoff
   const maxRetries = 3;
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       authPool = new Pool({
@@ -845,7 +846,7 @@ const connectAuthDatabase = async () => {
         idleTimeoutMillis: 30000,
         max: 10,
       });
-      
+
       authPool.on('error', (error) => {
         logger.error('Unexpected PostgreSQL auth client error', error);
       });
@@ -853,18 +854,18 @@ const connectAuthDatabase = async () => {
       // Test connection with timeout
       await Promise.race([
         authPool.query('SELECT 1'),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Connection timeout')), 10000)
         )
       ]);
-      
+
       logger.info('Auth database connection established');
       await ensureAuthUsersTable();
       return authPool;
     } catch (error) {
       lastError = error;
       logger.warn(`Auth database connection attempt ${attempt}/${maxRetries} failed:`, error.message);
-      
+
       if (authPool) {
         try {
           await authPool.end();
@@ -873,7 +874,7 @@ const connectAuthDatabase = async () => {
         }
         authPool = null;
       }
-      
+
       if (attempt < maxRetries) {
         // Longer delay for SSH tunnel connections
         const baseDelay = process.env.SSH_HOST ? 2000 : 1000;
@@ -883,7 +884,7 @@ const connectAuthDatabase = async () => {
       }
     }
   }
-  
+
   logger.error('Auth database connection failed after all retries', lastError);
   throw lastError;
 };
@@ -896,7 +897,7 @@ const getPool = () => {
     if (options) {
       // Log connection details for debugging (without password)
       logger.info(`🔌 Creating database pool: ${options.user}@${options.host}:${options.port}/${options.database}`);
-      
+
       mainPool = new Pool({
         ...options,
         connectionTimeoutMillis: options.connectionTimeoutMillis || 30000,
@@ -906,7 +907,7 @@ const getPool = () => {
         keepAlive: true,
         keepAliveInitialDelayMillis: 10000,
       });
-      
+
       mainPool.on('error', (error) => {
         logger.error('Unexpected PostgreSQL client error', error);
         // Reset pool on error to force reconnection
@@ -915,7 +916,7 @@ const getPool = () => {
           resetMainPool();
         }
       });
-      
+
       // Handle connection errors
       mainPool.on('connect', (client) => {
         client.on('error', (err) => {
@@ -926,7 +927,7 @@ const getPool = () => {
           }
         });
       });
-      
+
       logger.warn('⚠️ Database pool created on-demand. Consider calling connectDatabase() during server startup.');
     } else {
       const missing = [];
