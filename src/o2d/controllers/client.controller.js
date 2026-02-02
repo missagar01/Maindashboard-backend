@@ -67,11 +67,24 @@ async function getMarketingUsers(req, res) {
     }
 }
 
+async function getTotalClientsCount(req, res) {
+    try {
+        const count = await clientService.getTotalClientsCount();
+        res.status(200).json({ success: true, data: count });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+
 module.exports = {
     getAllClients,
     getClient,
     createClient,
     updateClient,
     deleteClient,
-    getMarketingUsers
+    getMarketingUsers,
+    getTotalClientsCount
 };
+
+
+

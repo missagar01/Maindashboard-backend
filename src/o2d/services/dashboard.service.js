@@ -108,6 +108,22 @@ where t.entity_code='SR'
 group by t.div_code
 `;
 
+const ALL_SAUDA_AVERAGE_QUERY = `
+select case when t.div_code = 'PM' then 'PIPE'
+       when t.div_code = 'RP' then 'STRIPS'
+       when t.div_code = 'SM' then 'BILLET'
+       end as item,
+       round((sum((t.rate*((t.qtyorder - nvl(t.SALE_INVOICE_QTY,0)) + nvl(t.SRET_QTY,0))))/sum(((t.qtyorder - nvl(t.SALE_INVOICE_QTY,0)) + nvl(t.SRET_QTY,0)))),0) as average
+from view_order_engine t
+where t.entity_code='SR'
+      and t.tcode='E'
+      and t.approveddate is not null
+      and t.closeddate is null
+      and ((t.qtyorder - nvl(t.SALE_INVOICE_QTY,0)) + nvl(t.SRET_QTY,0)) > 0
+      and t.vrdate >= DATE '2025-04-01'
+group by t.div_code
+`;
+
 const SALES_AVG_QUERY = `
 select case when t.div_code = 'PM' then 'PIPE'
        when t.div_code = 'RP' then 'STRIPS'
@@ -128,8 +144,7 @@ select round(avg(average),0) as average from
 from view_order_engine t
 where t.entity_code='SR'
       and t.tcode='E'
-      and t.vrdate >= TO_DATE(:p_from_date, 'YYYY-MM-DD')
-      and t.vrdate <  TO_DATE(:p_to_date,   'YYYY-MM-DD') + 1
+      and t.vrdate >= DATE '2025-04-01'
       and t.div_code='PM'
 group by t.vrdate
 order by t.vrdate )
@@ -275,7 +290,7 @@ async function getDashboardData({
         throw new Error("Failed to establish Oracle database connection");
       }
 
-      const [result, monthlyRes, pendingRes, saudaAvgRes, salesAvgRes, saudaRateRes, gdRes, filtersRes] = await Promise.all([
+      const [result, monthlyRes, pendingRes, saudaAvgRes, salesAvgRes, saudaRateRes, gdRes, filtersRes, allSaudaAvgRes] = await Promise.all([
         connection.execute(BASE_DASHBOARD_QUERY, binds, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         }),
@@ -291,13 +306,16 @@ async function getDashboardData({
         connection.execute(SALES_AVG_QUERY, summaryDateBinds, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         }),
-        connection.execute(SAUDA_RATE_TREND_QUERY, summaryDateBinds, {
+        connection.execute(SAUDA_RATE_TREND_QUERY, {}, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         }),
         connection.execute(GD_QUERY, summaryDateBinds, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         }),
         connection.execute(FILTERS_QUERY, {}, {
+          outFormat: oracledb.OUT_FORMAT_OBJECT,
+        }),
+        connection.execute(ALL_SAUDA_AVERAGE_QUERY, {}, {
           outFormat: oracledb.OUT_FORMAT_OBJECT,
         })
       ]);
@@ -318,6 +336,7 @@ async function getDashboardData({
 
       const saudaAvg = saudaAvgRes.rows || [];
       const salesAvg = salesAvgRes.rows || [];
+      const allSaudaAvg = allSaudaAvgRes.rows || [];
       const saudaRate2026 = saudaRateRow.AVERAGE || 0;
       const monthlyGd = gdRow.MONTHLY_GD || 0;
       const dailyGd = gdRow.DAILY_GD || 0;
@@ -360,6 +379,7 @@ async function getDashboardData({
           pendingOrdersTotal,
           conversionRatio,
           saudaAvg,
+          allSaudaAvg,
           salesAvg,
           saudaRate2026,
           monthlyGd,

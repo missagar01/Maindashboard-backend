@@ -182,11 +182,28 @@ async function getMarketingUsers() {
     });
 }
 
+/**
+ * Get total count of clients
+ */
+async function getTotalClientsCount() {
+    return withCache(generateCacheKey("clients_count"), DEFAULT_TTL.CUSTOMERS, async () => {
+        try {
+            const query = `SELECT COUNT(*)::int as total FROM clients`;
+            const result = await pgQuery(query);
+            return result.rows[0].total;
+        } catch (err) {
+            console.error("Error fetching clients count:", err);
+            throw err;
+        }
+    });
+}
+
 module.exports = {
     getClients,
     getClientById,
     createClient,
     updateClient,
     deleteClient,
-    getMarketingUsers
+    getMarketingUsers,
+    getTotalClientsCount
 };

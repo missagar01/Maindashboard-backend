@@ -11,7 +11,7 @@ dotenv.config({
   path: path.join(__dirname, ".env"),
 });
 
-const port = Number(process.env.PORT)
+const port = Number(process.env.PORT) // Server Port
 
 async function ensurePostgresConnection() {
   const maxRetries = 3;

@@ -54,10 +54,32 @@ async function deleteFollowup(req, res) {
     }
 }
 
+async function getSalesPerformanceReport(req, res) {
+    try {
+        const { startDate, endDate } = req.query;
+        const report = await followupService.getSalesPerformanceReport(startDate, endDate);
+        res.status(200).json({ success: true, data: report });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+
+async function getFollowupStats(req, res) {
+    try {
+        const { startDate, endDate } = req.query;
+        const stats = await followupService.getFollowupStats(startDate, endDate);
+        res.status(200).json({ success: true, data: stats });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+}
+
 module.exports = {
     getAllFollowups,
     getFollowup,
     createFollowup,
     updateFollowup,
-    deleteFollowup
+    deleteFollowup,
+    getSalesPerformanceReport,
+    getFollowupStats
 };

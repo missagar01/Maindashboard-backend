@@ -11,4 +11,7 @@ router.post('/enquiry', sizeMasterController.createEnquiry);
 // Get size master by ID
 router.get('/:id', sizeMasterController.getSizeMasterById);
 
+// Get current month enquiry report
+router.get('/report/current-month', sizeMasterController.getCurrentMonthEnquiryReport);
+
 module.exports = router;
