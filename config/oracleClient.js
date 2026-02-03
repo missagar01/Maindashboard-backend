@@ -4,7 +4,22 @@ const path = require("path");
 
 function exists(p) {
   try {
-    return !!p && fs.existsSync(p);
+    if (!p || !fs.existsSync(p)) return false;
+
+    // Check if it's a directory and has the actual library file
+    const stats = fs.statSync(p);
+    if (stats.isDirectory()) {
+      const libFile = process.platform === "win32" ? "oci.dll" : "libclntsh.so";
+      const libPath = path.join(p, libFile);
+      if (fs.existsSync(libPath)) {
+        const libStats = fs.statSync(libPath);
+        // If file exists but is 0 bytes, it's corrupted
+        if (libStats.size > 0) return true;
+        console.warn(`⚠️ Oracle library found at ${libPath} but it is empty (0 bytes).`);
+      }
+      return false;
+    }
+    return stats.size > 0;
   } catch {
     return false;
   }
