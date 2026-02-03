@@ -67,14 +67,20 @@ function initOracleClient() {
     console.log("🧩 node-oracledb:", oracledb.versionString);
   } catch (err) {
     // If already initialised, ignore
-    if (
-      String(err).includes("DPI-1047") ||
-      String(err).includes("already been initialized")
-    ) {
+    if (String(err).includes("already been initialized")) {
       console.log("ℹ️ Oracle client already initialised.");
       return;
     }
-    console.error("❌ Oracle init failed:", err);
+
+    // Check for DPI-1047 (Library loading error)
+    if (String(err).includes("DPI-1047")) {
+      console.error("❌ Oracle Client Library Load Error (DPI-1047):");
+      console.error("   This usually means `libaio1` is missing on Linux.");
+      console.error("   Try running: `sudo apt-get install libaio1`");
+      console.error(`   Library Path attempted: ${libDir}`);
+    }
+
+    console.error("❌ Oracle init failed details:", err);
     throw err;
   }
 }

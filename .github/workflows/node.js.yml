@@ -52,6 +52,15 @@ jobs:
         with:
           node-version: "20"
 
+      # 4.5️⃣ Install System Dependencies (Oracle Libs)
+      - name: Install System Dependencies
+        run: |
+          echo "🔧 Installing libaio..."
+          sudo apt-get update || true
+          # Try installing libaio1 (older) or libaio1t64 (newer)
+          sudo apt-get install -y libaio1 unzip wget || sudo apt-get install -y libaio1t64 unzip wget
+          echo "✅ System dependencies installed"
+
       # 5️⃣ Install dependencies
       - name: Install dependencies
         run: |
