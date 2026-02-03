@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-o2d-lead-batch
+  group: deploy-o2d-backend
   cancel-in-progress: true
 
 jobs:
@@ -21,79 +21,61 @@ jobs:
         with:
           fetch-depth: 1
 
-      # 2️⃣ Set FIXED app directory (NO auto-detect, NO mistake)
+      # 2️⃣ Set FIXED app directory
       - name: Set APP_DIR
         run: |
           APP_DIR="/home/ubuntu/actions-runner/_work/O2D-BatchCode-Lead-backend-aws/O2D-BatchCode-Lead-backend-aws"
           echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
           echo "✅ APP_DIR set to $APP_DIR"
 
-      # 3️⃣ Ensure .env exists (SAFE – never delete, never overwrite)
+      # 3️⃣ Ensure .env exists (never overwrite)
       - name: Ensure .env exists safely
         run: |
           if [ ! -f "$APP_DIR/.env" ]; then
-            echo "⚠️ .env not found in app directory"
+            echo "⚠️ .env not found"
 
             if [ ! -f "/home/ubuntu/secrets/o2d-backend/.env" ]; then
-              echo "❌ Source .env missing at /home/ubuntu/secrets/o2d-backend/.env"
+              echo "❌ Source .env missing"
               exit 1
             fi
 
             cp /home/ubuntu/secrets/o2d-backend/.env "$APP_DIR/.env"
             chmod 600 "$APP_DIR/.env"
-            echo "✅ .env copied safely (one-time)"
+            echo "✅ .env copied"
           else
-            echo "✅ .env already exists — NOT touching it"
+            echo "✅ .env already exists — untouched"
           fi
 
-      # 4️⃣ Non-blocking env verification (INFO only)
-      - name: Verify ENV keys (non-blocking)
-        run: |
-          cd "$APP_DIR"
-          echo "🔍 Checking MAYTAPI variables (info only)"
-
-          grep -q "MAYTAPI_PRODUCT_ID" .env && echo "✅ MAYTAPI_PRODUCT_ID found" || echo "⚠️ MAYTAPI_PRODUCT_ID not detected"
-          grep -q "MAYTAPI_PHONE_ID" .env && echo "✅ MAYTAPI_PHONE_ID found" || echo "⚠️ MAYTAPI_PHONE_ID not detected"
-          grep -q "MAYTAPI_TOKEN" .env && echo "✅ MAYTAPI_TOKEN found" || echo "⚠️ MAYTAPI_TOKEN not detected"
-
-          echo "ℹ️ Deployment will continue (runtime dotenv is source of truth)"
-
-      # 5️⃣ Setup Node.js
+      # 4️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # 6️⃣ Install dependencies
+      # 5️⃣ Install dependencies
       - name: Install dependencies
         run: |
           cd "$APP_DIR"
           npm ci --no-audit --no-fund
 
-      # 7️⃣ Start / Restart PM2 (SAFE)
-      - name: Start / Restart PM2
+      # 6️⃣ Start / Restart PM2 (CORRECT APP)
+      - name: Start / Restart PM2 (o2d-backend)
         run: |
           cd "$APP_DIR"
 
-          # remove wrong old app if exists
+          pm2 delete o2d-lead-batch || true   # cleanup old wrong app
           pm2 delete o2d-backend || true
 
-          if pm2 describe o2d-lead-batch >/dev/null 2>&1; then
-            pm2 restart o2d-lead-batch --update-env
-          else
-            pm2 start src/o2d/index.js \
-              --name o2d-lead-batch \
-              --cwd "$APP_DIR"
-          fi
+          PORT=3004 pm2 start server.js \
+            --name o2d-backend \
+            --update-env
 
           pm2 save
-          echo "✅ PM2 deployment completed"
+          echo "✅ PM2 o2d-backend deployed"
 
+      # 7️⃣ Health check
       - name: Health check
         run: |
-          pm2 logs o2d-lead-batch --lines 40 --nostream
-
-          
-
-
-
+          pm2 status
+          curl -f http://127.0.0.1:3004 || exit 1
+          curl -f https://o2d.sagartmt.com || exit 1
