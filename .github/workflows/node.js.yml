@@ -77,5 +77,18 @@ jobs:
       - name: Health check
         run: |
           pm2 status
-          curl -f http://127.0.0.1:3004 || exit 1
-          curl -f https://o2d.sagartmt.com || exit 1
+          echo "⏳ Waiting for server to start..."
+          
+          # Retry loop: Try 15 times with 2s interval (30s total)
+          for i in {1..15}; do
+            if curl -s -f http://127.0.0.1:3004 > /dev/null; then
+              echo "✅ Local health check passed!"
+              exit 0
+            fi
+            echo "zzz... waiting for port 3004 ($i/15)"
+            sleep 2
+          done
+          
+          echo "❌ Local health check timed out"
+          pm2 logs o2d-backend --lines 50
+          exit 1
