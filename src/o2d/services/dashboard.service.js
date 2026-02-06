@@ -150,29 +150,39 @@ GROUP BY
 
 const SALES_AVG_QUERY = `
 SELECT
-  CASE
-    WHEN lhs_utility.get_name('emp_code', t.emp_code)
-         IN ('DIRECT', 'DC GOUTAM', 'P.S GEDAM')
-      THEN 'ANIL MISHRA'
-    ELSE lhs_utility.get_name('emp_code', t.emp_code)
-  END AS sales_person,
-  CASE
-    WHEN t.div_code = 'PM' THEN 'PIPE'
-    WHEN t.div_code = 'RP' THEN 'STRIPS'
-    WHEN t.div_code = 'SM' THEN 'BILLET'
-  END AS item,
+  sales_person,
+  item,
   ROUND(
-    SUM(t.tax_onamount) /
-    NULLIF(SUM(t.qtyissued), 0),
-  0) AS average
-FROM view_itemtran_engine t
-WHERE t.entity_code = 'SR'
-  AND t.series = 'SA'
-  AND t.vrdate >= TO_DATE(:p_from_date, 'YYYY-MM-DD')
-  AND t.vrdate <  TO_DATE(:p_to_date,   'YYYY-MM-DD') + 1
+    SUM(tax_onamount) / NULLIF(SUM(qtyissued), 0),
+    0
+  ) AS average
+FROM (
+  SELECT
+    CASE
+      WHEN lhs_utility.get_name('emp_code', t.emp_code)
+           IN ('DIRECT', 'DC GOUTAM', 'P.S GEDAM')
+      THEN 'ANIL MISHRA'
+      ELSE lhs_utility.get_name('emp_code', t.emp_code)
+    END AS sales_person,
+    CASE
+      WHEN t.div_code = 'PM' THEN 'PIPE'
+      WHEN t.div_code = 'RP' THEN 'STRIPS'
+      WHEN t.div_code = 'SM' THEN 'BILLET'
+    END AS item,
+    t.tax_onamount,
+    t.qtyissued
+  FROM view_itemtran_engine t
+  WHERE t.entity_code = 'SR'
+    AND t.series = 'SA'
+    AND t.vrdate >= TO_DATE(:p_from_date, 'YYYY-MM-DD')
+    AND t.vrdate <  TO_DATE(:p_to_date,   'YYYY-MM-DD') + 1
+)
 GROUP BY
-  lhs_utility.get_name('emp_code', t.emp_code),
-  t.div_code
+  sales_person,
+  item
+ORDER BY
+  sales_person,
+  item
 `;
 
 const SAUDA_RATE_TREND_QUERY = `
