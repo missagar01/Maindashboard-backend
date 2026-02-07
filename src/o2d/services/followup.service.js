@@ -108,6 +108,8 @@ async function getFollowupById(followupId) {
 /**
  * Update a followup
  */
+
+
 async function updateFollowup(followupId, followupData) {
     try {
         const {
