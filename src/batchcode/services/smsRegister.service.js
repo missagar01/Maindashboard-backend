@@ -10,6 +10,10 @@ const toDateOrNow = (value) => {
 const formatDay = (dateObj) => String(dateObj.getDate()).padStart(2, '0');
 const formatSequence = (num) => String(num).padStart(2, '0');
 
+// Month codes: A = January, B = February, C = March, ... L = December
+const MONTH_CODES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+const getMonthCode = (dateObj) => MONTH_CODES[dateObj.getMonth()];
+
 const createSmsRegister = async (payload) => {
   const targetDate = toDateOrNow(payload?.sample_timestamp);
   const targetDateISO = targetDate.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -17,7 +21,8 @@ const createSmsRegister = async (payload) => {
   for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt += 1) {
     const currentCount = await smsRegisterRepository.countByDate(targetDateISO);
     const nextSequence = currentCount + 1;
-    const unique_code = `${formatDay(targetDate)}${formatSequence(nextSequence)}`;
+    // Format: DD + MonthCode + Sequence (e.g., 09B01 for Feb 9th, first entry)
+    const unique_code = `${formatDay(targetDate)}${getMonthCode(targetDate)}${formatSequence(nextSequence)}`;
 
     try {
       return await smsRegisterRepository.insertSmsRegister({
