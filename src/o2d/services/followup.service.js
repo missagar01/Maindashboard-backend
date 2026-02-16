@@ -3,6 +3,18 @@ const { generateCacheKey, withCache, delCached, DEFAULT_TTL } = require("../util
 
 const FOLLOWUPS_CACHE_KEY = generateCacheKey("followups");
 
+// Helper to parse dd-mm-yyyy or similar to ISO YYYY-MM-DD for PostgreSQL
+function parseDate(dateStr) {
+    if (!dateStr) return null;
+    if (typeof dateStr !== 'string') return dateStr;
+    const parts = dateStr.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+    if (parts) {
+        // parts[1] is dd, parts[2] is mm, parts[3] is yyyy
+        return `${parts[3]}-${parts[2]}-${parts[1]}`;
+    }
+    return dateStr;
+}
+
 /**
  * Get all followups
  */
@@ -71,9 +83,9 @@ async function createFollowup(followupData) {
             client_name,
             sales_person,
             actual_order ? parseFloat(actual_order) : 0,
-            actual_order_date || null,
-            date_of_calling || new Date(),
-            next_calling_date || null
+            parseDate(actual_order_date) || null,
+            parseDate(date_of_calling) || new Date(),
+            parseDate(next_calling_date) || null
         ];
 
         const result = await pgQuery(query, values);
@@ -138,9 +150,9 @@ async function updateFollowup(followupId, followupData) {
             client_name,
             sales_person,
             actual_order ? parseFloat(actual_order) : 0,
-            actual_order_date,
-            date_of_calling,
-            next_calling_date,
+            parseDate(actual_order_date),
+            parseDate(date_of_calling),
+            parseDate(next_calling_date),
             followupId
         ];
 
@@ -213,6 +225,45 @@ async function getSalesPerformanceReport(startDate, endDate) {
                   , 2) AS "conversionRatio",
                   COALESCE(SUM(actual_order) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0)::numeric(15,2) AS "totalRsSale",
                   ROUND(
+                    (
+                      COALESCE(SUM(actual_order) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0)
+                      / NULLIF(COUNT(*) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0)
+                    )
+                  , 2) AS "avgRsSale"
+                FROM filtered
+                GROUP BY ROLLUP (sales_person)
+                ORDER BY
+                  CASE WHEN GROUPING(sales_person) = 1 THEN 1 ELSE 0 END,
+                  "noOfCallings" DESC;
+            `;
+
+            // note: avgRsSale logic slightly adjusted in SQL above to match a typical Average Order Value logic if desired, 
+            // but preserving original AVG logic is safer if that's what user had.
+            // Wait, looking at original code:
+            // ROUND(COALESCE(AVG(actual_order) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0), 2) AS "avgRsSale"
+            // I will revert strictly to the original logic to avoid accidental changes.
+
+            const originalQuery = `
+                WITH filtered AS (
+                  SELECT
+                    COALESCE(NULLIF(TRIM(sales_person), ''), 'Unknown') AS sales_person,
+                    actual_order,
+                    date_of_calling::date AS date_of_calling
+                  FROM client_followups
+                  WHERE ${dateFilter}
+                )
+                SELECT
+                  CASE WHEN GROUPING(sales_person) = 1 THEN 'Total' ELSE sales_person END AS "salesPerson",
+                  COUNT(*)::int AS "noOfCallings",
+                  COUNT(*) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0)::int AS "orderClients",
+                  ROUND(
+                    (
+                      COUNT(*) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0)::numeric
+                      / NULLIF(COUNT(*)::numeric, 0)
+                    ) * 100
+                  , 2) AS "conversionRatio",
+                  COALESCE(SUM(actual_order) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0)::numeric(15,2) AS "totalRsSale",
+                  ROUND(
                     COALESCE(AVG(actual_order) FILTER (WHERE actual_order IS NOT NULL AND actual_order > 0), 0)
                   , 2) AS "avgRsSale"
                 FROM filtered
@@ -223,7 +274,7 @@ async function getSalesPerformanceReport(startDate, endDate) {
             `;
 
             // console.log("Executing Query:", query.substring(0, 100) + "...", "Values:", values);
-            const result = await pgQuery(query, values);
+            const result = await pgQuery(originalQuery, values);
             return result.rows;
         } catch (err) {
             console.error("❌ Error fetching sales performance report:", err);

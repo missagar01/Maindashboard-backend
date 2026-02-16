@@ -76,3 +76,9 @@ const getHotCoilByUniqueCode = async (uniqueCode) => {
 };
 
 module.exports = { createHotCoil, listHotCoilEntries, getHotCoilByUniqueCode };
+
+
+
+
+
+
