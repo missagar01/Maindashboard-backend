@@ -1,5 +1,6 @@
 const { pgQuery } = require("../../../config/pg.js");
 const { generateCacheKey, withCache, delCached, DEFAULT_TTL } = require("../utils/cacheHelper.js");
+const { invalidateClientsCache } = require("./client.service.js");
 
 const FOLLOWUPS_CACHE_KEY = generateCacheKey("followups");
 
@@ -95,6 +96,7 @@ async function createFollowup(followupData) {
         if (sales_person) {
             await delCached(`${FOLLOWUPS_CACHE_KEY}_${sales_person}`);
         }
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {
@@ -163,6 +165,7 @@ async function updateFollowup(followupId, followupData) {
         if (sales_person) {
             await delCached(`${FOLLOWUPS_CACHE_KEY}_${sales_person}`);
         }
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {
@@ -181,6 +184,8 @@ async function deleteFollowup(followupId) {
 
         // Invalidate cache
         await delCached(FOLLOWUPS_CACHE_KEY);
+        // Also invalidate clients cache
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {

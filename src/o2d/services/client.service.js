@@ -28,6 +28,11 @@ async function getClients() {
                     t1.user_name as sales_person
                 FROM clients t
                 LEFT JOIN users t1 ON t.sales_person_id = t1.id
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM client_followups cf 
+                    WHERE LOWER(TRIM(cf.client_name)) = LOWER(TRIM(t.client_name)) 
+                    AND cf.date_of_calling::date = CURRENT_DATE
+                )
                 ORDER BY t.created_at ASC
             `;
 
@@ -52,6 +57,14 @@ async function getClientById(clientId) {
         console.error("Error fetching client by ID:", err);
         throw err;
     }
+}
+
+/**
+ * Invalidate clients cache
+ */
+async function invalidateClientsCache() {
+    await delCached(CLIENTS_CACHE_KEY);
+    await delCached(generateCacheKey("clients_count"));
 }
 
 /**
@@ -93,7 +106,7 @@ async function createClient(clientData) {
         const result = await pgQuery(query, values);
 
         // Invalidate cache
-        await delCached(CLIENTS_CACHE_KEY);
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {
@@ -145,7 +158,7 @@ async function updateClient(clientId, clientData) {
         const result = await pgQuery(query, values);
 
         // Invalidate cache
-        await delCached(CLIENTS_CACHE_KEY);
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {
@@ -163,7 +176,7 @@ async function deleteClient(clientId) {
         const result = await pgQuery(query, [clientId]);
 
         // Invalidate cache
-        await delCached(CLIENTS_CACHE_KEY);
+        await invalidateClientsCache();
 
         return result.rows[0];
     } catch (err) {
@@ -209,6 +222,7 @@ module.exports = {
     updateClient,
     deleteClient,
     getMarketingUsers,
-    getTotalClientsCount
+    getTotalClientsCount,
+    invalidateClientsCache
 };
 
