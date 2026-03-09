@@ -1,6 +1,6 @@
 # MASTER_API
 
-Generated on: 2026-03-07T09:48:07.904Z
+Generated on: 2026-03-09T13:12:00.000Z
 
 ## Base URL
 - `http://localhost:3004`
@@ -36,7 +36,8 @@ Generated on: 2026-03-07T09:48:07.904Z
 ## Runtime Notes
 - `401` = token missing/invalid.
 - `500` DB connect error = route loaded, but DB/tunnel/network issue.
-- Quick mount check: `/api/store/health`, `/api/document/health`, `/api/master/health`, `/api/hrfms/health`, `/api/gatepass/health`.
+- Quick mount check: `/api/store/health`, `/api/document/health`, `/api/master/health`, `/api/hrfms/health`, `/api/gatepass/health`, `/api/checklist/health`.
+- `Checklist/Mainatce/Houskeeping` routes are JWT-protected. Use `Authorization: Bearer <TOKEN>` from login for every request.
 
 ## Shared Auth APIs (3)
 
@@ -45,6 +46,163 @@ Generated on: 2026-03-07T09:48:07.904Z
 | GET | `/api/auth/crm-users` |
 | POST | `/api/auth/login` |
 | POST | `/api/auth/logout` |
+
+## Checklist Auth APIs (4)
+
+Note: These are public auth endpoints. Remaining Checklist/Mainatce/Houskeeping endpoints require token.
+
+
+## Checklist APIs (67)
+
+Note: Token required on all Checklist routes.
+
+| Method | Endpoint |
+|---|---|
+| GET | `/api/checklist/health` |
+| GET | `/api/checklist/dashboard` |
+| GET | `/api/checklist/dashboard/total` |
+| GET | `/api/checklist/dashboard/completed` |
+| GET | `/api/checklist/dashboard/pending` |
+| GET | `/api/checklist/dashboard/pendingtoday` |
+| GET | `/api/checklist/dashboard/completedtoday` |
+| GET | `/api/checklist/dashboard/overdue` |
+| GET | `/api/checklist/dashboard/upcoming` |
+| GET | `/api/checklist/dashboard/notdone` |
+| GET | `/api/checklist/dashboard/notdone/list` |
+| GET | `/api/checklist/dashboard/departments` |
+| GET | `/api/checklist/dashboard/staff` |
+| GET | `/api/checklist/dashboard/staff-summary` |
+| GET | `/api/checklist/dashboard/checklist/date-range` |
+| GET | `/api/checklist/dashboard/checklist/date-range/stats` |
+| GET | `/api/checklist/dashboard/checklist/date-range/count` |
+| GET | `/api/checklist/dashboard/count` |
+| GET | `/api/checklist/dashboard/division-wise-counts` |
+| GET | `/api/checklist/assign-task/departments/:user_name` |
+| GET | `/api/checklist/assign-task/divisions` |
+| GET | `/api/checklist/assign-task/given-by` |
+| GET | `/api/checklist/assign-task/doer/:department` |
+| GET | `/api/checklist/assign-task/working-days` |
+| POST | `/api/checklist/assign-task/assign` |
+| GET | `/api/checklist/pending` |
+| GET | `/api/checklist/history` |
+| POST | `/api/checklist/update` |
+| POST | `/api/checklist/user-status` |
+| PATCH | `/api/checklist/admin-status` |
+| POST | `/api/checklist/admin-done` |
+| PATCH | `/api/checklist/admin-role` |
+| PATCH | `/api/checklist/reject-role` |
+| GET | `/api/checklist/hr-manager` |
+| GET | `/api/checklist/departments` |
+| GET | `/api/checklist/doers` |
+| GET | `/api/checklist/delegation` |
+| GET | `/api/checklist/delegation-done` |
+| POST | `/api/checklist/delegation/submit` |
+| GET | `/api/checklist/settings/users` |
+| GET | `/api/checklist/settings/users/:id` |
+| POST | `/api/checklist/settings/users` |
+| PUT | `/api/checklist/settings/users/:id` |
+| DELETE | `/api/checklist/settings/users/:id` |
+| GET | `/api/checklist/settings/departments` |
+| GET | `/api/checklist/settings/departments-only` |
+| GET | `/api/checklist/settings/given-by` |
+| POST | `/api/checklist/settings/departments` |
+| PUT | `/api/checklist/settings/departments/:id` |
+| DELETE | `/api/checklist/settings/departments/:id` |
+| PATCH | `/api/checklist/settings/users/:id/system_access` |
+| PATCH | `/api/checklist/settings/users/:id/verify-access` |
+| PATCH | `/api/checklist/settings/users/:id/verify-access-dept` |
+| GET | `/api/checklist/staff-tasks/tasks` |
+| GET | `/api/checklist/staff-tasks/tasks/export` |
+| GET | `/api/checklist/staff-tasks/count` |
+| GET | `/api/checklist/staff-tasks/users-count` |
+| POST | `/api/checklist/tasks/checklist` |
+| POST | `/api/checklist/tasks/delegation` |
+| POST | `/api/checklist/tasks/delete-checklist` |
+| POST | `/api/checklist/tasks/delete-delegation` |
+| POST | `/api/checklist/tasks/update-checklist` |
+| GET | `/api/checklist/tasks/users` |
+| GET | `/api/checklist/logs/device-sync` |
+| GET | `/api/checklist/user-score` |
+| GET | `/api/checklist/user-score/:id` |
+| POST | `/api/checklist/add-new-task` |
+
+## Houskeeping APIs (26)
+
+Note: Same endpoints are also available via `/api/housekeeping/...` alias. Token required.
+
+| Method | Endpoint |
+|---|---|
+| GET | `/api/houskeeping/assigntask/generate` |
+| POST | `/api/houskeeping/assigntask/generate` |
+| GET | `/api/houskeeping/assigntask/generate/stats` |
+| GET | `/api/houskeeping/assigntask/generate/overdue` |
+| GET | `/api/houskeeping/assigntask/generate/not-done` |
+| GET | `/api/houskeeping/assigntask/generate/today` |
+| GET | `/api/houskeeping/assigntask/generate/tomorrow` |
+| GET | `/api/houskeeping/assigntask/generate/today/count` |
+| GET | `/api/houskeeping/assigntask/generate/tomorrow/count` |
+| GET | `/api/houskeeping/assigntask/generate/overdue/count` |
+| GET | `/api/houskeeping/assigntask/generate/not-done/count` |
+| GET | `/api/houskeeping/assigntask/generate/pending` |
+| GET | `/api/houskeeping/assigntask/generate/history` |
+| POST | `/api/houskeeping/assigntask/generate/delete` |
+| POST | `/api/houskeeping/assigntask/generate/confirm/bulk` |
+| POST | `/api/houskeeping/assigntask/generate/:id/confirm` |
+| GET | `/api/houskeeping/assigntask/generate/:id` |
+| PATCH | `/api/houskeeping/assigntask/generate/:id` |
+| DELETE | `/api/houskeeping/assigntask/generate/:id` |
+| POST | `/api/houskeeping/uploads/image` |
+| GET | `/api/houskeeping/working-days` |
+| GET | `/api/houskeeping/dashboard/summary` |
+| GET | `/api/houskeeping/dashboard/departments` |
+| GET | `/api/houskeeping/dashboard/debug` |
+| GET | `/api/houskeeping/locations` |
+| POST | `/api/houskeeping/locations` |
+
+## Mainatce APIs (38)
+
+Note: Same endpoints are also available via `/api/maintenance/...` alias. Token required.
+
+| Method | Endpoint |
+|---|---|
+| GET | `/api/mainatce/tasks` |
+| GET | `/api/mainatce/tasks/pending` |
+| GET | `/api/mainatce/tasks/completed` |
+| PUT | `/api/mainatce/tasks/:taskId` |
+| PUT | `/api/mainatce/tasks/bulk/update` |
+| GET | `/api/mainatce/machines/unique` |
+| GET | `/api/mainatce/personnel/unique` |
+| GET | `/api/mainatce/statistics` |
+| GET | `/api/mainatce/departments/unique` |
+| GET | `/api/mainatce/doers/unique` |
+| POST | `/api/mainatce/maintenance-tasks` |
+| POST | `/api/mainatce/maintenance-tasks/bulk` |
+| GET | `/api/mainatce/maintenance-tasks` |
+| GET | `/api/mainatce/form-responses` |
+| GET | `/api/mainatce/dropdown` |
+| GET | `/api/mainatce/machine-details` |
+| GET | `/api/mainatce/machine-details/tag/:tagNo/history` |
+| GET | `/api/mainatce/machine-details/tag/:tagNo` |
+| PUT | `/api/mainatce/machine-details/tag/:tagNo` |
+| GET | `/api/mainatce/machine-details/:serialNo/history` |
+| GET | `/api/mainatce/machine-details/:serialNo` |
+| PUT | `/api/mainatce/machine-details/:serialNo` |
+| GET | `/api/mainatce/working-days` |
+| POST | `/api/mainatce/working-days` |
+| POST | `/api/mainatce/machines` |
+| GET | `/api/mainatce/machines` |
+| GET | `/api/mainatce/master` |
+| GET | `/api/mainatce/departments` |
+| GET | `/api/mainatce/dashboard/stats` |
+| GET | `/api/mainatce/dashboard/data` |
+| GET | `/api/mainatce/dashboard/today-tasks` |
+| GET | `/api/mainatce/dashboard/upcoming-tasks` |
+| GET | `/api/mainatce/dashboard/overdue-tasks` |
+| GET | `/api/mainatce/dashboard/maintenance-costs` |
+| GET | `/api/mainatce/dashboard/department-costs` |
+| GET | `/api/mainatce/dashboard/frequencies` |
+| GET | `/api/mainatce/dashboard/departments` |
+| GET | `/api/mainatce/dashboard/staff` |
 
 ## Store APIs (63)
 
@@ -384,9 +542,6 @@ Generated on: 2026-03-07T09:48:07.904Z
 | POST | `/api/document/users/create` |
 | DELETE | `/api/document/users/delete/:username` |
 | PUT | `/api/document/users/update/:username` |
-
-
-
 
 
 

@@ -22,6 +22,23 @@ dotenv.config({
 });
 
 const port = Number(process.env.PORT || 3004); // Server Port
+const DEPLOY_MODE = process.env.DEPLOY_MODE === "true";
+
+let checklistSyncModulesPromise = null;
+async function loadChecklistSyncModules() {
+  if (!checklistSyncModulesPromise) {
+    checklistSyncModulesPromise = Promise.all([
+      import("./src/checklist-maintenance-housekeeping/services/deviceSync.js"),
+      import("./src/checklist-maintenance-housekeeping/services/housekepping-services/assignTaskServices.js"),
+    ]).then(([deviceSyncMod, assignTaskMod]) => ({
+      refreshDeviceSync: deviceSyncMod.refreshDeviceSync,
+      markAllOverdueTasksAsNotDone: deviceSyncMod.markAllOverdueTasksAsNotDone,
+      assignTaskService: assignTaskMod.assignTaskService,
+    }));
+  }
+
+  return checklistSyncModulesPromise;
+}
 
 async function ensurePostgresConnection() {
   const maxRetries = 3;
@@ -71,6 +88,93 @@ async function closeDatabases() {
 
 // Import CommonJS app module
 const app = require("./src/app.js");
+
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    pid: process.pid,
+    deployMode: DEPLOY_MODE,
+  });
+});
+
+/* =======================
+   DEVICE SYNC (SAFE)
+======================= */
+const DEVICE_SYNC_INTERVAL_MS = Number(
+  process.env.DEVICE_SYNC_INTERVAL_MS || 5 * 60 * 1000
+);
+
+const DEVICE_SYNC_ENABLED =
+  process.env.DEVICE_SYNC_ENABLED !== "false" && !DEPLOY_MODE;
+
+let isSyncRunning = false;
+
+if (DEVICE_SYNC_ENABLED) {
+  const runDeviceSync = async () => {
+    // Force IST time
+    const now = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+
+    // Run at 11:00 AM OR 11:00 PM (IST)
+    // Allow 8-minute window (minute < 8)
+    const isMorningRun = hour === 11;
+    const isNightRun = hour === 23;
+
+    if (!((isMorningRun || isNightRun) && minute < 8)) return;
+
+    if (isSyncRunning) return;
+    isSyncRunning = true;
+
+    try {
+      const {
+        refreshDeviceSync,
+        markAllOverdueTasksAsNotDone,
+        assignTaskService,
+      } = await loadChecklistSyncModules();
+
+      const mode = isMorningRun ? "Morning (11 AM)" : "Night (11 PM)";
+      console.log(`⏱ ${mode} Device Sync triggered`);
+
+      // Pass the hour so logic knows which trigger to run
+      await refreshDeviceSync(undefined, hour);
+
+      // Trigger Housekeeping overdue task update (Morning only)
+      if (isMorningRun) {
+        console.log("🧹 Housekeeping Overdue Task Update triggered");
+        const count = await assignTaskService.markOverdueAsNotDone();
+        console.log(
+          `✅ Housekeeping Overdue Task Update completed. Updated ${count} tasks.`
+        );
+
+        // Blanket Overdue for Checklist & Maintenance
+        console.log("🧹 Checklist & Maintenance Overdue Update triggered");
+        const otherCounts = await markAllOverdueTasksAsNotDone();
+        console.log("✅ Checklist & Maintenance Overdue Update completed:", otherCounts);
+      }
+
+      console.log(`✅ ${mode} Device Sync completed`);
+    } catch (err) {
+      console.error("❌ DEVICE SYNC ERROR:", err);
+    } finally {
+      isSyncRunning = false;
+    }
+  };
+
+  // Deploy mode me ye block execute hi nahi hota
+  runDeviceSync();
+  setInterval(runDeviceSync, DEVICE_SYNC_INTERVAL_MS);
+} else {
+  console.log("⏸️ Device sync disabled (DEPLOY MODE)");
+}
+
+console.log("DEPLOY_MODE:", DEPLOY_MODE);
+console.log("DEVICE_SYNC_ENABLED:", DEVICE_SYNC_ENABLED);
+console.log("DEVICE_SYNC_INTERVAL_MS:", DEVICE_SYNC_INTERVAL_MS);
 
 const server = app.listen(port, async () => {
   try {

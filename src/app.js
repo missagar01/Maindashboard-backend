@@ -13,6 +13,7 @@ const masterRoutes = require("./master/router.cjs");
 const gatepassRoutes = require("./gatepass/router.cjs");
 const storeRoutes = require("./store/router.cjs");
 const documentRoutes = require("./document/router.cjs");
+const checklistMaintenanceRoutes = require("./checklist-maintenance-housekeeping/router.cjs");
 
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 const corsOrigins = corsOriginsEnv
@@ -68,6 +69,7 @@ apiRouter.use("/master", masterRoutes);
 apiRouter.use("/gatepass", gatepassRoutes);
 apiRouter.use("/store", storeRoutes);
 apiRouter.use("/document", documentRoutes);
+apiRouter.use("/", checklistMaintenanceRoutes);
 apiRouter.use("/auth", sharedAuthRoutes);
 
 const app = express();
@@ -123,7 +125,13 @@ app.use("/uploads", express.static(uploadsPath, {
 app.use("/api", apiRouter);
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  const deployMode = process.env.DEPLOY_MODE === "true";
+  res.status(200).json({
+    status: "ok",
+    uptime: process.uptime(),
+    pid: process.pid,
+    deployMode,
+  });
 });
 
 // 404 handler
