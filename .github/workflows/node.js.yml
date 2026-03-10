@@ -1,24 +1,72 @@
-name: Node.js CI/CD
+name: Deploy sagargroup backend
 
 on:
   push:
     branches: ["master"]
+  workflow_dispatch:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
-      - name: Checkout Repository
+
+      # 1️⃣ Checkout repository without cleaning files
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 1
 
+      # 2️⃣ Set backend directory
+      - name: Set APP_DIR
+        run: |
+          APP_DIR="/home/ubuntu/actions-runner/_work/sagargroup.co.backend/sagargroup.co.backend"
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+
+      # 3️⃣ Ensure .env exists (NEVER overwrite)
+      - name: Ensure .env exists
+        run: |
+          if [ ! -f "$APP_DIR/.env" ]; then
+            echo "⚠️ .env missing — restoring backup"
+            cp /home/ubuntu/secrets/sagargroup/.env "$APP_DIR/.env"
+            chmod 600 "$APP_DIR/.env"
+          else
+            echo "✅ .env already exists"
+          fi
+
+      # 4️⃣ Setup Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 5️⃣ Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: |
+          cd "$APP_DIR"
+          npm install
 
+      # 6️⃣ Build
       - name: Build project
-        run: npm run build --if-present
+        run: |
+          cd "$APP_DIR"
+          npm run build --if-present
 
+      # 7️⃣ Restart PM2 safely
       - name: Restart backend
         run: |
-          pm2 restart sagargroup-backend --update-env || pm2 start server.js --name sagargroup-backend
+          cd "$APP_DIR"
+
+          pm2 describe sagargroup-backend >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
+
+          if [ "$EXISTS" -eq 0 ]; then
+            echo "🟢 Starting backend"
+            pm2 start server.js --name sagargroup-backend --update-env
+          else
+            echo "🔁 Restarting backend"
+            pm2 restart sagargroup-backend --update-env
+          fi
+
           pm2 save
+          pm2 status
