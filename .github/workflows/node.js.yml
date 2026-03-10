@@ -1,115 +1,72 @@
-name: Deploy to EC2 (PM2)
+name: Deploy sagargroup backend
 
 on:
   push:
     branches: ["master"]
   workflow_dispatch:
 
-concurrency:
-  group: deploy-o2d-backend
-  cancel-in-progress: true
-
 jobs:
   deploy:
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 45
 
     steps:
-      # 1️⃣ Checkout repository (SAFE)
+
+      # 1️⃣ Checkout repository without cleaning files
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
           clean: false
+          fetch-depth: 1
 
-      # 2️⃣ Define fixed app directory
+      # 2️⃣ Set backend directory
       - name: Set APP_DIR
         run: |
-          APP_DIR="/home/ubuntu/actions-runner/_work/O2D-BatchCode-Lead-backend-aws/O2D-BatchCode-Lead-backend-aws"
+          APP_DIR="/home/ubuntu/actions-runner/_work/sagargroup.co.backend/sagargroup.co.backend"
           echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
-          echo "✅ APP_DIR set to $APP_DIR"
 
       # 3️⃣ Ensure .env exists (NEVER overwrite)
-      - name: Ensure .env exists safely
+      - name: Ensure .env exists
         run: |
           if [ ! -f "$APP_DIR/.env" ]; then
-            echo "⚠️ .env not found, restoring from secrets"
-
-            if [ ! -f "/home/ubuntu/secrets/o2d-backend/.env" ]; then
-              echo "❌ Backup .env missing"
-              exit 1
-            fi
-
-            cp /home/ubuntu/secrets/o2d-backend/.env "$APP_DIR/.env"
+            echo "⚠️ .env missing — restoring backup"
+            cp /home/ubuntu/secrets/sagargroup/.env "$APP_DIR/.env"
             chmod 600 "$APP_DIR/.env"
-            echo "✅ .env restored"
           else
-            echo "✅ .env already exists — untouched"
+            echo "✅ .env already exists"
           fi
 
-      # 4️⃣ Verify .env integrity
-      - name: Verify .env integrity
-        run: |
-          if [ ! -s "$APP_DIR/.env" ]; then
-            echo "❌ .env missing or empty"
-            exit 1
-          fi
-          echo "✅ .env verified"
-
-      # 5️⃣ Setup Node.js
+      # 4️⃣ Setup Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # 6️⃣ Install system dependencies
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update || true
-          sudo apt-get install -y unzip wget \
-            || sudo apt-get install -y libaio1t64 unzip wget
-
-      # 7️⃣ Install npm dependencies
-      - name: Install npm dependencies
+      # 5️⃣ Install dependencies
+      - name: Install dependencies
         run: |
           cd "$APP_DIR"
-          npm ci --no-audit --no-fund
+          npm install
 
-      # 8️⃣ PM2 Restart (HRFMS-style SAFE)
-      - name: Restart PM2 safely (NO DELETE)
+      # 6️⃣ Build
+      - name: Build project
+        run: |
+          cd "$APP_DIR"
+          npm run build --if-present
+
+      # 7️⃣ Restart PM2 safely
+      - name: Restart backend
         run: |
           cd "$APP_DIR"
 
-          pm2 describe o2d-backend >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
+          pm2 describe sagargroup-backend >/dev/null 2>&1 && EXISTS=1 || EXISTS=0
 
           if [ "$EXISTS" -eq 0 ]; then
-            echo "🟢 Starting new PM2 process"
-            pm2 start server.js \
-              --name o2d-backend \
-              --time \
-              --update-env
+            echo "🟢 Starting backend"
+            pm2 start server.js --name sagargroup-backend --update-env
           else
-            echo "🔁 Restarting existing PM2 process"
-            pm2 restart o2d-backend --update-env
+            echo "🔁 Restarting backend"
+            pm2 restart sagargroup-backend --update-env
           fi
 
           pm2 save
           pm2 status
-
-      # 9️⃣ Health check
-      - name: Health check
-        run: |
-          echo "⏳ Waiting for port 3004..."
-
-          for i in {1..20}; do
-            if ss -lnt | grep -q ":3004"; then
-              echo "✅ Port 3004 is listening"
-              break
-            fi
-            sleep 2
-          done
-
-          curl -f http://127.0.0.1:3004/health
-          curl -f -k https://o2d.sagartmt.com/api/health || echo "⚠️ Public health skipped"
-
-          echo "🎉 Deploy successful"

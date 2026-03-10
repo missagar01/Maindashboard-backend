@@ -15,152 +15,139 @@ function getJwtSecret() {
   );
 }
 
-// Shared login query (supports username and employee_id)
-async function buildUserSelectQuery() {
-  return `
-    SELECT 
-      id,
-      user_name,
-      password,
-      email_id,
-      department,
-      given_by,
-      role,
+// ── Ensure session_token column exists (run once on first login) ──────────────
+let sessionColumnEnsured = false;
+async function ensureSessionTokenColumn() {
+  if (sessionColumnEnsured) return;
+  try {
+    await loginQuery(
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS session_token TEXT DEFAULT NULL`,
+      []
+    );
+    sessionColumnEnsured = true;
+    console.log("✅ users.session_token column ensured");
+  } catch (err) {
+    console.warn("⚠️  Could not ensure session_token column:", err.message);
+  }
+}
+
+// ── User select query ─────────────────────────────────────────────────────────
+let cachedUserSelectQuery = null;
+async function getUserSelectQuery() {
+  if (cachedUserSelectQuery) return cachedUserSelectQuery;
+  cachedUserSelectQuery = `
+    SELECT
+      id, user_name, password, email_id, department, given_by, role,
       COALESCE(status, 'active') as status,
-      user_access,
-      page_access,
-      system_access,
-      remark,
-      employee_id
+      user_access, page_access, system_access, remark, employee_id
     FROM users
     WHERE TRIM(user_name) = $1 OR TRIM(COALESCE(employee_id, '')) = $1
     LIMIT 1
   `;
+  return cachedUserSelectQuery;
 }
 
-// Cache the query string
-let cachedUserSelectQuery = null;
-
+// ── Sign JWT ──────────────────────────────────────────────────────────────────
 function signToken(user) {
   const jwtSecret = getJwtSecret();
-  if (!jwtSecret) {
-    throw new Error("JWT secret not configured");
-  }
+  if (!jwtSecret) throw new Error("JWT secret not configured");
 
-  const payload = {
-    id: user.id,
-    username: user.user_name || user.username,
-    user_name: user.user_name || user.username,
-    role: user.role || 'user',
-    // Explicitly include access fields in token
-    user_access: user.user_access || '',
-    page_access: user.page_access || '',
-    system_access: user.system_access || '',
-    employee_id: user.employee_id || '',
-    email_id: user.email_id || '',
-    department: user.department || ''
-  };
-
-  return jwt.sign(payload, jwtSecret, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.user_name || user.username,
+      user_name: user.user_name || user.username,
+      role: user.role || "user",
+      user_access: user.user_access || "",
+      page_access: user.page_access || "",
+      system_access: user.system_access || "",
+      employee_id: user.employee_id || "",
+      email_id: user.email_id || "",
+      department: user.department || "",
+    },
+    jwtSecret,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
 }
 
-function normalizePermissions(raw = null) {
-  if (!raw) return { read: true, write: false, update: false, delete: false };
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return { read: true, write: false, update: false, delete: false };
-    }
-  }
-  return raw;
+// ── Normalize DB value ────────────────────────────────────────────────────────
+function normalizeValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && (value.toUpperCase() === "NULL" || value.trim() === "")) return null;
+  return value;
 }
 
+// ── POST /api/auth/login ──────────────────────────────────────────────────────
 async function login(req, res) {
-  // Support username, user_name, or employee_id as login identifier
+  await ensureSessionTokenColumn();
+
   const loginId = req.body.username || req.body.user_name || req.body.employee_id;
   const password = req.body.password;
 
-  // Validate input
   if (!loginId || !password) {
     return res.status(400).json({
       success: false,
-      message: "username/user_name/employee_id and password are required"
+      message: "username/user_name/employee_id and password are required",
     });
   }
 
   try {
-    // Build or use cached query
-    if (!cachedUserSelectQuery) {
-      console.log('Building user select query for the first time...');
-      cachedUserSelectQuery = await buildUserSelectQuery();
-    }
-
-    // Query user from login database
-    const result = await loginQuery(cachedUserSelectQuery, [String(loginId).trim()]);
+    const query = await getUserSelectQuery();
+    const result = await loginQuery(query, [String(loginId).trim()]);
 
     if (!result.rows || result.rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials"
-      });
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
-    const storedPassword = user.password || "";
 
-    // Password comparison - plain text only (no hashing)
-    const passwordMatches = storedPassword === password;
-
-    if (!passwordMatches) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid credentials"
-      });
+    if ((user.password || "") !== password) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Normalize values - convert "NULL" strings to actual null
-    const normalizeValue = (value) => {
-      if (value === null || value === undefined) return null;
-      if (typeof value === 'string' && (value.toUpperCase() === 'NULL' || value.trim() === '')) return null;
-      return value;
-    };
+    if (user.status && user.status.toLowerCase() === "inactive") {
+      return res.status(403).json({ success: false, message: "Account is inactive" });
+    }
 
-    // Normalize user data
     const normalizedUser = {
       id: user.id,
-      role: user.role || 'user',
+      role: user.role || "user",
       user_name: user.user_name,
+      username: user.user_name,
       user_access: normalizeValue(user.user_access),
       page_access: normalizeValue(user.page_access),
       system_access: normalizeValue(user.system_access),
       employee_id: normalizeValue(user.employee_id),
       email_id: normalizeValue(user.email_id),
       department: normalizeValue(user.department),
-      // Additional fields for compatibility (optional)
-      username: user.user_name, // Alias for compatibility
-      status: user.status || 'active',
+      status: user.status || "active",
     };
 
-    // Generate JWT token with normalized data
+    // Generate token (30 days)
     const token = signToken(normalizedUser);
 
-    // Return success response with user data
-    // Include the requested fields: id, role, user_name, user_access, page_access, system_access, employee_id, email_id
-    console.log('Sending user data to frontend:', JSON.stringify(normalizedUser, null, 2));
-    // Return success response with user data
-    // Include the requested fields: id, role, user_name, user_access, page_access, system_access, employee_id, email_id
-    console.log('Sending user data to frontend:', JSON.stringify(normalizedUser, null, 2));
+    // ── Single-session: store new token in DB, revoking any previous session ──
+    try {
+      await loginQuery(
+        `UPDATE users SET session_token = $1 WHERE id = $2`,
+        [token, user.id]
+      );
+    } catch (err) {
+      console.warn("⚠️  Could not store session_token:", err.message);
+      // Non-fatal — login continues
+    }
+
+    console.log("✅ Login:", normalizedUser.user_name);
+
     return res.status(200).json({
       success: true,
       data: {
         user: normalizedUser,
         token,
-        // Also pass access fields at the top level of data for easy access
         user_access: normalizedUser.user_access,
         page_access: normalizedUser.page_access,
         system_access: normalizedUser.system_access,
-        role: normalizedUser.role
+        role: normalizedUser.role,
       },
     });
   } catch (err) {
@@ -168,20 +155,65 @@ async function login(req, res) {
     return res.status(500).json({
       success: false,
       message: "Login failed",
-      error: process.env.NODE_ENV === "development" ? err.message : "Internal server error"
+      error: process.env.NODE_ENV === "development" ? err.message : "Internal server error",
     });
   }
 }
 
-function logout(req, res) {
-  // Stateless logout - simply acknowledge and allow frontend to clear tokens
-  return res.status(200).json({
-    success: true,
-    message: "Logged out successfully",
-  });
+// ── POST /api/auth/logout ─────────────────────────────────────────────────────
+async function logout(req, res) {
+  const userId = req.user?.id;
+  if (userId) {
+    try {
+      await loginQuery(`UPDATE users SET session_token = NULL WHERE id = $1`, [userId]);
+    } catch (err) {
+      console.warn("⚠️  Could not clear session_token on logout:", err.message);
+    }
+  }
+  return res.status(200).json({ success: true, message: "Logged out successfully" });
 }
 
-module.exports = {
-  login,
-  logout,
-};
+// ── GET /api/auth/verify-session ─────────────────────────────────────────────
+// Frontend calls this periodically to detect if session was revoked by another login
+async function verifySession(req, res) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ success: false, message: "No token provided" });
+  }
+
+  const jwtSecret = getJwtSecret();
+  if (!jwtSecret) {
+    return res.status(500).json({ success: false, message: "Server misconfigured" });
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(token, jwtSecret);
+  } catch {
+    return res.status(401).json({ success: false, message: "Token expired or invalid" });
+  }
+
+  try {
+    const result = await loginQuery(
+      `SELECT session_token FROM users WHERE id = $1 LIMIT 1`,
+      [decoded.id]
+    );
+    const row = result.rows?.[0];
+    if (!row || row.session_token !== token) {
+      return res.status(401).json({
+        success: false,
+        message: "Session invalidated — another login detected",
+        code: "SESSION_REVOKED",
+      });
+    }
+  } catch (err) {
+    console.warn("⚠️  Could not verify session_token:", err.message);
+    // Fail open — don't lock users out if DB check fails
+  }
+
+  return res.status(200).json({ success: true, message: "Session active" });
+}
+
+module.exports = { login, logout, verifySession };
