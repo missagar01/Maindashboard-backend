@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const { loginQuery } = require("../../../config/pg.js");
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "30d";
+const ENFORCE_SINGLE_SESSION = String(process.env.ENFORCE_SINGLE_SESSION || "").toLowerCase() === "true";
 
 const FAST_USER_SELECT_QUERY = `
   SELECT
@@ -80,6 +81,17 @@ function signToken(user) {
     jwtSecret,
     { expiresIn: JWT_EXPIRES_IN }
   );
+}
+
+function extractBearerToken(rawHeader) {
+  const header = typeof rawHeader === "string" ? rawHeader.trim() : "";
+  if (!header) return null;
+
+  if (header.toLowerCase().startsWith("bearer ")) {
+    return header.slice(7).trim() || null;
+  }
+
+  return header;
 }
 
 function normalizeValue(value) {
@@ -184,11 +196,14 @@ async function logout(req, res) {
 }
 
 async function verifySession(req, res) {
-  const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const token = extractBearerToken(req.headers.authorization || req.headers.Authorization || "");
 
   if (!token) {
-    return res.status(401).json({ success: false, message: "No token provided" });
+    return res.status(401).json({
+      success: false,
+      message: "No token provided",
+      code: "TOKEN_MISSING",
+    });
   }
 
   const jwtSecret = getJwtSecret();
@@ -199,8 +214,21 @@ async function verifySession(req, res) {
   let decoded;
   try {
     decoded = jwt.verify(token, jwtSecret);
-  } catch {
-    return res.status(401).json({ success: false, message: "Token expired or invalid" });
+  } catch (err) {
+    const code = err?.name === "TokenExpiredError" ? "TOKEN_EXPIRED" : "TOKEN_INVALID";
+    return res.status(401).json({ success: false, message: "Token expired or invalid", code });
+  }
+
+  if (!ENFORCE_SINGLE_SESSION) {
+    return res.status(200).json({ success: true, message: "Session active" });
+  }
+
+  if (!decoded?.id) {
+    return res.status(401).json({
+      success: false,
+      message: "Token payload missing user id",
+      code: "TOKEN_INVALID",
+    });
   }
 
   try {
@@ -208,7 +236,26 @@ async function verifySession(req, res) {
       decoded.id,
     ]);
     const row = result.rows?.[0];
-    if (!row || row.session_token !== token) {
+
+    if (!row) {
+      return res.status(401).json({
+        success: false,
+        message: "Session invalidated - another login detected",
+        code: "SESSION_REVOKED",
+      });
+    }
+
+    const storedToken = typeof row.session_token === "string" ? row.session_token.trim() : "";
+    if (!storedToken) {
+      try {
+        await loginQuery(`UPDATE users SET session_token = $1 WHERE id = $2`, [token, decoded.id]);
+      } catch (err) {
+        console.warn("Could not backfill missing session_token:", err.message);
+      }
+      return res.status(200).json({ success: true, message: "Session active" });
+    }
+
+    if (storedToken !== token) {
       return res.status(401).json({
         success: false,
         message: "Session invalidated - another login detected",
