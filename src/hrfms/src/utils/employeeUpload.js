@@ -2,6 +2,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+const EMPLOYEE_UPLOAD_ROUTE = '/uploads/employees';
+
 // Ensure uploads directory exists for employee images
 const uploadsDir = path.join(process.cwd(), 'uploads', 'employees');
 if (!fs.existsSync(uploadsDir)) {
@@ -58,6 +60,31 @@ const uploadEmployeeImages = multer({
   { name: 'document_img', maxCount: 10 }
 ]);
 
+const normalizeUploadValue = (value) => String(value || '').trim().replace(/\\/g, '/');
+
+const buildEmployeeImagePath = (filename) => {
+  const cleanedFilename = path.posix.basename(normalizeUploadValue(filename).split(/[?#]/)[0]);
+  if (!cleanedFilename) {
+    return null;
+  }
+
+  return `${EMPLOYEE_UPLOAD_ROUTE}/${cleanedFilename}`;
+};
+
+const normalizeEmployeeImagePath = (value) => {
+  const normalizedValue = normalizeUploadValue(value);
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const uploadPathMatch = normalizedValue.match(/\/uploads\/employees\/[^?#"'\s]+/i);
+  if (uploadPathMatch) {
+    return uploadPathMatch[0];
+  }
+
+  return buildEmployeeImagePath(normalizedValue);
+};
+
 // Determine base URL from explicit value or environment defaults
 const resolveBaseUrl = (overrideUrl) => {
   const fromEnv = process.env.BASE_URL || process.env.API_BASE_URL;
@@ -72,25 +99,30 @@ const resolveBaseUrl = (overrideUrl) => {
   return fallback.replace(/\/+$/, '');
 };
 
-// Helper function to generate image URL
+// Helper functions to build stable employee upload paths.
+const getEmployeeImagePath = (filename) => normalizeEmployeeImagePath(filename);
+
 const getEmployeeImageUrl = (filename, baseUrlOverride) => {
-  if (!filename) return null;
+  const relativePath = normalizeEmployeeImagePath(filename);
+  if (!relativePath) return null;
   const baseUrl = resolveBaseUrl(baseUrlOverride);
   if (!baseUrl) {
-    return `/uploads/employees/${filename}`;
+    return relativePath;
   }
-  return `${baseUrl}/uploads/employees/${filename}`;
+  return `${baseUrl}${relativePath}`;
 };
 
 // Helper function to extract filename from URL
 const getFilenameFromUrl = (url) => {
   if (!url) return null;
-  const parts = url.split('/');
+  const parts = normalizeUploadValue(url).split(/[?#]/)[0].split('/');
   return parts[parts.length - 1];
 };
 
 module.exports = {
   uploadEmployeeImages,
+  getEmployeeImagePath,
   getEmployeeImageUrl,
-  getFilenameFromUrl
+  getFilenameFromUrl,
+  normalizeEmployeeImagePath
 };

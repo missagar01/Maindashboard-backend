@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { normalizeEmployeeImagePath } = require("../utils/employeeUpload");
 
 const resolvePageAccessInput = (data) =>
   data?.page_access ??
@@ -81,19 +82,29 @@ const deserializePageAccess = (value) => {
 
 const deserializeDocuments = (value) => {
   if (!value) return [];
-  if (Array.isArray(value)) return value;
+  if (Array.isArray(value)) return value.map(normalizeEmployeeImagePath).filter(Boolean);
 
-  if (typeof value !== "string") return [String(value)];
+  if (typeof value !== "string") {
+    const normalizedValue = normalizeEmployeeImagePath(String(value));
+    return normalizedValue ? [normalizedValue] : [];
+  }
 
   try {
     const parsed = JSON.parse(value);
-    if (Array.isArray(parsed)) return parsed;
-    return [parsed];
+    if (Array.isArray(parsed)) return parsed.map(normalizeEmployeeImagePath).filter(Boolean);
+
+    const normalizedValue = normalizeEmployeeImagePath(parsed);
+    return normalizedValue ? [normalizedValue] : [];
   } catch {
     if (value.includes(',')) {
-      return value.split(',').map(item => item.trim()).filter(Boolean);
+      return value
+        .split(',')
+        .map(item => normalizeEmployeeImagePath(item))
+        .filter(Boolean);
     }
-    return [value];
+
+    const normalizedValue = normalizeEmployeeImagePath(value);
+    return normalizedValue ? [normalizedValue] : [];
   }
 };
 
@@ -104,6 +115,7 @@ const hydrateEmployee = (employee) => {
   return {
     ...employee,
     page_access: deserializePageAccess(employee.page_access),
+    profile_img: normalizeEmployeeImagePath(employee.profile_img),
     document_img: deserializeDocuments(employee.document_img),
   };
 };

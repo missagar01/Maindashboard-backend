@@ -1,5 +1,5 @@
 const employeeModel = require('../models/employeeModel');
-const { getEmployeeImageUrl } = require('../utils/employeeUpload');
+const { getEmployeeImagePath, normalizeEmployeeImagePath } = require('../utils/employeeUpload');
 const { invalidateCache, getOrSetCache } = require('../utils/cache');
 
 class EmployeeService {
@@ -40,10 +40,12 @@ class EmployeeService {
 
       if (files) {
         if (files.profile_img && files.profile_img[0]) {
-          data.profile_img = getEmployeeImageUrl(files.profile_img[0].filename, baseUrl);
+          data.profile_img = getEmployeeImagePath(files.profile_img[0].filename);
         }
         if (files.document_img && files.document_img.length > 0) {
-          const documentUrls = files.document_img.map(file => getEmployeeImageUrl(file.filename, baseUrl));
+          const documentUrls = files.document_img
+            .map(file => getEmployeeImagePath(file.filename))
+            .filter(Boolean);
           data.document_img = JSON.stringify(documentUrls);
         }
       }
@@ -78,9 +80,10 @@ class EmployeeService {
         ...existingEmployee,
         ...data
       };
+      payload.profile_img = normalizeEmployeeImagePath(payload.profile_img);
 
       if (files?.profile_img?.[0]) {
-        payload.profile_img = getEmployeeImageUrl(files.profile_img[0].filename, baseUrl);
+        payload.profile_img = getEmployeeImagePath(files.profile_img[0].filename);
       }
 
       // Handle document updates (selective removal + new uploads)
@@ -94,6 +97,9 @@ class EmployeeService {
           currentDocuments = typeof data.existing_documents === 'string'
             ? JSON.parse(data.existing_documents)
             : data.existing_documents;
+          currentDocuments = (Array.isArray(currentDocuments) ? currentDocuments : [currentDocuments])
+            .map(normalizeEmployeeImagePath)
+            .filter(Boolean);
         } catch (error) {
           console.error('Error parsing existing_documents:', error);
           // Fallback to existing ones if parse fails
@@ -107,7 +113,9 @@ class EmployeeService {
       // 2. Add newly uploaded files
       if (files?.document_img && files.document_img.length > 0) {
         docChanged = true;
-        const documentUrls = files.document_img.map(file => getEmployeeImageUrl(file.filename, baseUrl));
+        const documentUrls = files.document_img
+          .map(file => getEmployeeImagePath(file.filename))
+          .filter(Boolean);
         currentDocuments = [...currentDocuments, ...documentUrls];
       }
 
