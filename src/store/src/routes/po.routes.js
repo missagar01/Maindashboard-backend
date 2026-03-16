@@ -8,9 +8,9 @@ import {
 import { authenticate } from "../middlewares/auth.middleware.js";
 const router = Router();
 
-router.get("/pending",authenticate, getPoPending);
+router.get("/pending", authenticate, getPoPending);
 router.get("/pending/download", authenticate, downloadPoPending);
-router.get("/history",authenticate, getPoHistory);
+router.get("/history", authenticate, getPoHistory);
 router.get("/history/download", authenticate, downloadPoHistory);
 
 export default router;
