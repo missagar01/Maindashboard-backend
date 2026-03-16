@@ -561,10 +561,10 @@ const ensureAuthUsersTable = async () => {
         `);
 
         // Alter the column to use the sequence as default
-        await authPool.query(`
-          ALTER TABLE public.users 
-          ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
-        `);
+        // await authPool.query(`
+        //   ALTER TABLE public.users 
+        //   ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
+        // `);
 
         console.log('✅ Successfully converted id column to auto-increment');
       } else if (colInfo.data_type === 'bigint' && colInfo.column_default) {
@@ -596,7 +596,6 @@ const ensureAuthUsersTable = async () => {
       // Create sequence if it doesn't exist
       await authPool.query(`
         CREATE SEQUENCE IF NOT EXISTS users_id_seq;
-        ALTER TABLE public.users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
         SELECT setval('users_id_seq', COALESCE((SELECT MAX(id) FROM public.users), 1), true);
       `);
     } else {
@@ -607,7 +606,6 @@ const ensureAuthUsersTable = async () => {
       const maxId = parseInt(maxIdResult.rows[0].max_id) || 0;
 
       await authPool.query(`
-        ALTER TABLE public.users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
         SELECT setval('users_id_seq', ${maxId + 1}, false);
       `);
     }
