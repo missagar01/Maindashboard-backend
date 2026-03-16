@@ -5,6 +5,10 @@ Generated on: 2026-03-09T13:12:00.000Z
 ## Base URL
 - `http://localhost:3004`
 
+## Detailed Write API Guide
+- `MASTER_API_WRITE_GUIDE.md` contains starter request/response examples for `POST`, `PUT`, `PATCH`, and `DELETE` APIs.
+- Use `MASTER_API.md` as the endpoint index and `MASTER_API_WRITE_GUIDE.md` as the Postman / implementation companion.
+
 ## Single Login (Use One Token For All Modules)
 1. Login once: `POST /api/auth/login`
 2. Copy token from response: `data.token`

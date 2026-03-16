@@ -5,7 +5,7 @@ import { getOrSetCache, cacheKeys, DEFAULT_TTL } from "./redisCache.js";
 
 export async function getCostLocationsService(divCode = null) {
   try {
-    const cacheKey = divCode ? `costlocation:${divCode}` : 'costlocation:ALL';
+    const cacheKey = cacheKeys.costLocation(divCode || "ALL");
 
     const result = await getOrSetCache(
       cacheKey,
@@ -38,7 +38,7 @@ export async function getCostLocationsService(divCode = null) {
           }
         }
       },
-      1800 // Cache for 30 minutes (cost locations don't change often)
+      DEFAULT_TTL.COST_LOCATION
     );
 
     return {
@@ -57,7 +57,7 @@ export async function getCostLocationsService(divCode = null) {
 // Get Cost Locations for RP Division
 export async function getCostLocationsRP() {
   try {
-    const cacheKey = "costlocation:RP";
+    const cacheKey = cacheKeys.costLocation("RP");
 
     const result = await getOrSetCache(
       cacheKey,
@@ -87,7 +87,7 @@ export async function getCostLocationsRP() {
           }
         }
       },
-      1800 // Cache for 30 minutes
+      DEFAULT_TTL.COST_LOCATION
     );
 
     return {
@@ -106,7 +106,7 @@ export async function getCostLocationsRP() {
 // Get Cost Locations for PM Division
 export async function getCostLocationsPM() {
   try {
-    const cacheKey = "costlocation:PM";
+    const cacheKey = cacheKeys.costLocation("PM");
 
     const result = await getOrSetCache(
       cacheKey,
@@ -136,7 +136,7 @@ export async function getCostLocationsPM() {
           }
         }
       },
-      1800 // Cache for 30 minutes
+      DEFAULT_TTL.COST_LOCATION
     );
 
     return {
@@ -155,7 +155,7 @@ export async function getCostLocationsPM() {
 // Get Cost Locations for CO Division (DIV_CODE IS NULL only)
 export async function getCostLocationsCO() {
   try {
-    const cacheKey = "costlocation:CO";
+    const cacheKey = cacheKeys.costLocation("CO");
 
     const result = await getOrSetCache(
       cacheKey,
@@ -185,7 +185,7 @@ export async function getCostLocationsCO() {
           }
         }
       },
-      1800 // Cache for 30 minutes
+      DEFAULT_TTL.COST_LOCATION
     );
 
     return {

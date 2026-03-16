@@ -2,7 +2,10 @@ import { withPgClient } from "../config/postgres.js";
 import { getOrSetCache, deleteCache, cacheKeys, DEFAULT_TTL } from "./redisCache.js";
 
 async function invalidateDepartmentCaches(departmentName = null) {
-  const deletes = [deleteCache(cacheKeys.departments()), deleteCache("store:departments:hod:*")];
+  const deletes = [
+    deleteCache(cacheKeys.departments()),
+    deleteCache(cacheKeys.departmentHodPattern()),
+  ];
 
   if (departmentName) {
     deletes.push(deleteCache(cacheKeys.departmentHod(departmentName)));

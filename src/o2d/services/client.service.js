@@ -11,6 +11,7 @@ const MARKETING_USERS_CACHE_KEY = generateCacheKey("marketing_users");
 /**
  * Get all clients
  */
+
 async function getClients() {
     return withCache(CLIENTS_CACHE_KEY, DEFAULT_TTL.CUSTOMERS, async () => {
         try {

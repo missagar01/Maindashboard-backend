@@ -1,26 +1,33 @@
-import redisClient, { connectRedis } from "../config/redisClient.js";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const redis = require("../../../../config/redis.js");
+
+const CACHE_NAMESPACE = "store:v2";
 
 const DEFAULT_TTL = {
-  STOCK: 300,
-  PO: 180,
-  INDENT: 180,
-  DASHBOARD: 120,
-  GATE_PASS: 180,
-  UOM: 300,
+  STOCK: 90,
+  PO: 45,
+  INDENT: 45,
+  DASHBOARD: 15,
+  GATE_PASS: 45,
+  UOM: 900,
   AUTH: 300,
-  COST_LOCATION: 300,
-  STORE_ISSUE: 180,
-  ITEMS: 300,
-  RETURNABLE: 180,
-  REPAIR_FOLLOWUP: 120,
-  STORE_GRN: 180,
-  STORE_GRN_APPROVAL: 120,
+  COST_LOCATION: 1800,
+  STORE_ISSUE: 30,
+  ITEMS: 1800,
+  RETURNABLE: 45,
+  REPAIR_FOLLOWUP: 20,
+  STORE_GRN: 30,
+  STORE_GRN_APPROVAL: 15,
   DEPARTMENTS: 300,
-  SETTINGS: 180,
+  SETTINGS: 60,
 };
 
 const memoryCache = new Map();
 const inFlightFetches = new Map();
+const keyVersions = new Map();
+const registeredKeys = new Set();
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -30,13 +37,42 @@ function createPatternMatcher(pattern) {
   return new RegExp(`^${escapeRegex(pattern).replace(/\\\*/g, ".*")}$`);
 }
 
+function registerKey(key) {
+  registeredKeys.add(key);
+}
+
+function getKeyVersion(key) {
+  return keyVersions.get(key) || 0;
+}
+
+function bumpKeyVersion(key) {
+  keyVersions.set(key, getKeyVersion(key) + 1);
+}
+
+function getMatchingKeys(pattern) {
+  if (!pattern.includes("*")) {
+    return [pattern];
+  }
+
+  const matcher = createPatternMatcher(pattern);
+  const matches = [];
+
+  for (const key of registeredKeys) {
+    if (matcher.test(key)) {
+      matches.push(key);
+    }
+  }
+
+  return matches;
+}
+
 function getMemoryEntry(key) {
   const entry = memoryCache.get(key);
   if (!entry) {
     return null;
   }
 
-  if (entry.expiresAt && entry.expiresAt <= Date.now()) {
+  if (entry.expiresAt !== null && entry.expiresAt <= Date.now()) {
     memoryCache.delete(key);
     return null;
   }
@@ -45,9 +81,11 @@ function getMemoryEntry(key) {
 }
 
 function setMemoryEntry(key, data, ttlSeconds = null) {
+  const hasTtl = Number.isFinite(ttlSeconds) && ttlSeconds > 0;
+
   memoryCache.set(key, {
     data,
-    expiresAt: ttlSeconds ? Date.now() + (ttlSeconds * 1000) : null,
+    expiresAt: hasTtl ? Date.now() + (ttlSeconds * 1000) : null,
   });
 }
 
@@ -69,6 +107,21 @@ function deleteMemoryEntries(pattern) {
   return deleted;
 }
 
+function clearInFlightFetches(pattern) {
+  if (!pattern.includes("*")) {
+    inFlightFetches.delete(pattern);
+    return;
+  }
+
+  const matcher = createPatternMatcher(pattern);
+
+  for (const key of inFlightFetches.keys()) {
+    if (matcher.test(key)) {
+      inFlightFetches.delete(key);
+    }
+  }
+}
+
 function normalizeKeyPart(value) {
   if (value === undefined || value === null || value === "") {
     return "na";
@@ -77,58 +130,55 @@ function normalizeKeyPart(value) {
   return encodeURIComponent(String(value).trim().toLowerCase());
 }
 
-function buildKey(prefix, ...parts) {
-  return ["store", prefix, ...parts.map(normalizeKeyPart)].join(":");
-}
-
-async function ensureConnected() {
-  if (!redisClient.isOpen) {
-    try {
-      await connectRedis();
-    } catch {
-      // Graceful degradation: memory cache still works.
-    }
+function normalizePatternPart(value) {
+  if (value === "*") {
+    return "*";
   }
 
-  return redisClient.isOpen;
+  return normalizeKeyPart(value);
+}
+
+function buildKey(prefix, ...parts) {
+  return [CACHE_NAMESPACE, prefix, ...parts.map(normalizeKeyPart)].join(":");
+}
+
+function buildPattern(prefix, ...parts) {
+  return [CACHE_NAMESPACE, prefix, ...parts.map(normalizePatternPart)].join(":");
 }
 
 export async function getCache(key) {
-  const memoryValue = getMemoryEntry(key);
-  if (memoryValue !== null) {
-    return memoryValue;
+  registerKey(key);
+
+  // Redis first avoids stale local memory hiding a fresher shared cache entry.
+  if (redis.isAvailable()) {
+    try {
+      const cached = await redis.get(key);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (err) {
+      console.warn(`[RedisCache] getCache error for key "${key}":`, err.message);
+    }
   }
 
-  try {
-    if (!(await ensureConnected())) {
-      return null;
-    }
-
-    const cached = await redisClient.get(key);
-    if (!cached) {
-      return null;
-    }
-
-    return JSON.parse(cached);
-  } catch (err) {
-    console.warn(`[RedisCache] getCache error for key "${key}":`, err.message);
-    return null;
-  }
+  return getMemoryEntry(key);
 }
 
 export async function setCache(key, data, ttlSeconds = null) {
+  registerKey(key);
+  setMemoryEntry(key, data, ttlSeconds);
+
+  if (!redis.isAvailable()) {
+    return true;
+  }
+
   try {
-    setMemoryEntry(key, data, ttlSeconds);
-
-    if (!(await ensureConnected())) {
-      return true;
-    }
-
     const serialized = JSON.stringify(data);
-    if (ttlSeconds) {
-      await redisClient.setEx(key, ttlSeconds, serialized);
+
+    if (Number.isFinite(ttlSeconds) && ttlSeconds > 0) {
+      await redis.setEx(key, ttlSeconds, serialized);
     } else {
-      await redisClient.set(key, serialized);
+      await redis.set(key, serialized);
     }
 
     return true;
@@ -138,38 +188,36 @@ export async function setCache(key, data, ttlSeconds = null) {
   }
 }
 
-export async function deleteCache(key) {
-  const memoryDeletes = deleteMemoryEntries(key);
+export async function deleteCache(pattern) {
+  const matchingKeys = getMatchingKeys(pattern);
+
+  for (const key of matchingKeys) {
+    bumpKeyVersion(key);
+    registeredKeys.delete(key);
+  }
+
+  clearInFlightFetches(pattern);
+  const memoryDeletes = deleteMemoryEntries(pattern);
+
+  if (!redis.isAvailable()) {
+    return memoryDeletes;
+  }
 
   try {
-    if (!(await ensureConnected())) {
-      return memoryDeletes;
+    if (pattern.includes("*")) {
+      return memoryDeletes + (await redis.deletePattern(pattern));
     }
 
-    if (key.includes("*")) {
-      const keys = [];
-      for await (const matchedKey of redisClient.scanIterator({
-        MATCH: key,
-        COUNT: 100,
-      })) {
-        keys.push(matchedKey);
-      }
-
-      if (!keys.length) {
-        return memoryDeletes;
-      }
-
-      return memoryDeletes + (await redisClient.del(keys));
-    }
-
-    return memoryDeletes + (await redisClient.del(key));
+    return memoryDeletes + (await redis.del(pattern));
   } catch (err) {
-    console.warn(`[RedisCache] deleteCache error for key "${key}":`, err.message);
+    console.warn(`[RedisCache] deleteCache error for key "${pattern}":`, err.message);
     return memoryDeletes;
   }
 }
 
 export async function getOrSetCache(key, fetchFn, ttlSeconds = null) {
+  registerKey(key);
+
   const cached = await getCache(key);
   if (cached !== null) {
     return cached;
@@ -179,13 +227,18 @@ export async function getOrSetCache(key, fetchFn, ttlSeconds = null) {
     return inFlightFetches.get(key);
   }
 
+  const versionBeforeFetch = getKeyVersion(key);
+
   const fetchPromise = (async () => {
     const freshData = await fetchFn();
 
-    if (freshData !== null && freshData !== undefined) {
-      setCache(key, freshData, ttlSeconds).catch((err) => {
-        console.warn(`[RedisCache] Failed to cache key "${key}":`, err.message);
-      });
+    // Do not re-populate cache with stale data after an invalidation raced this fetch.
+    if (
+      freshData !== null &&
+      freshData !== undefined &&
+      versionBeforeFetch === getKeyVersion(key)
+    ) {
+      await setCache(key, freshData, ttlSeconds);
     }
 
     return freshData;
@@ -196,7 +249,9 @@ export async function getOrSetCache(key, fetchFn, ttlSeconds = null) {
   try {
     return await fetchPromise;
   } finally {
-    inFlightFetches.delete(key);
+    if (inFlightFetches.get(key) === fetchPromise) {
+      inFlightFetches.delete(key);
+    }
   }
 }
 
@@ -222,10 +277,12 @@ export const cacheKeys = {
   returnableDetails: () => buildKey("returnable", "details"),
   repairFollowups: () => buildKey("repairfollowup", "all"),
   repairFollowupById: (id) => buildKey("repairfollowup", "id", id),
+  repairFollowupByIdPattern: () => buildPattern("repairfollowup", "id", "*"),
   storeGrnPending: () => buildKey("storegrn", "pending"),
   storeGrnApprovalAll: () => buildKey("storegrnapproval", "all"),
   departments: () => buildKey("departments", "all"),
   departmentHod: (department) => buildKey("departments", "hod", department),
+  departmentHodPattern: () => buildPattern("departments", "hod", "*"),
   settingsUsers: () => buildKey("settings", "users"),
   dashboardRepair: () => buildKey("dashboard", "repair-system"),
 };
@@ -235,4 +292,3 @@ export async function invalidateCache(pattern) {
 }
 
 export { DEFAULT_TTL };
-

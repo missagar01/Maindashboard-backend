@@ -9,7 +9,7 @@ async function invalidateRepairFollowupCaches(id = null) {
     if (id !== null && id !== undefined) {
         deletes.push(deleteCache(cacheKeys.repairFollowupById(id)));
     } else {
-        deletes.push(deleteCache("store:repairfollowup:id:*"));
+        deletes.push(deleteCache(cacheKeys.repairFollowupByIdPattern()));
     }
 
     await Promise.all(deletes);
