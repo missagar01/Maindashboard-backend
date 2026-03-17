@@ -50,10 +50,10 @@ CREATE INDEX IF NOT EXISTS idx_indent_item_code ON indent(item_code);
 async function createIndentTable() {
   const pool = getPgPool();
   const client = await pool.connect();
-  
+
   try {
     console.log('🔄 Creating indent table in PostgreSQL (AWS RDS)...');
-    
+
     // Check if table exists first
     const checkTable = await client.query(`
       SELECT EXISTS (
@@ -62,24 +62,24 @@ async function createIndentTable() {
         AND table_name = 'indent'
       );
     `);
-    
+
     if (checkTable.rows[0].exists) {
       console.log('✅ indent table already exists!');
       return;
     }
-    
+
     // Create table
     await client.query('BEGIN');
     await client.query(CREATE_TABLE_SQL);
     await client.query('COMMIT');
-    
+
     console.log('✅ indent table created successfully!');
     console.log('✅ All indexes created!');
-    
+
     // Verify
     const verify = await client.query('SELECT COUNT(*) FROM indent');
     console.log(`✅ Table verified. Current row count: ${verify.rows[0].count}`);
-    
+
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('❌ Error creating table:', error.message);
@@ -91,8 +91,8 @@ async function createIndentTable() {
 }
 
 // Run if called directly
-const isMainModule = import.meta.url === `file://${process.argv[1]}` || 
-                     process.argv[1] && process.argv[1].endsWith('create-indent-table.js');
+const isMainModule = import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1] && process.argv[1].endsWith('create-indent-table.js');
 
 if (isMainModule) {
   createIndentTable()

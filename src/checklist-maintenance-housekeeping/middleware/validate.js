@@ -11,3 +11,5 @@ const validateBody = (schema) => (req, _res, next) => {
 };
 
 export { validateBody };
+
+

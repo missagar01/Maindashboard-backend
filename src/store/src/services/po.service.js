@@ -28,8 +28,9 @@ export async function getPoPending() {
         (NVL(t.qtyorder, 0) - NVL(t.qtyexecute, 0)) AS BALANCE_QTY
       FROM view_order_engine t
       LEFT JOIN (
-        SELECT DISTINCT vrno, indent_remark 
-        FROM view_indent_engine
+        SELECT vrno, indent_remark 
+        FROM indent_head
+        WHERE entity_code = 'SR'
       ) a ON a.vrno = t.indent_vrno
       WHERE t.entity_code = 'SR'
         AND t.series = 'U3'
@@ -93,12 +94,9 @@ export async function getPoHistory() {
       ) a ON a.vrno = t.indent_vrno
       WHERE t.entity_code = 'SR'
         AND t.series = 'U3'
-        AND t.qtycancelled IS NULL
-        AND t.vrdate >= '01-apr-2025'
-        AND (
-          (t.qtyorder - t.qtyexecute) = 0
-          OR (t.qtyorder - t.qtyexecute) > t.qtyorder
-        )
+        AND NVL(t.qtycancelled, 0) = 0
+        AND t.vrdate >= TRUNC(SYSDATE, 'MM')
+        AND NVL(t.qtyorder, 0) - NVL(t.qtyexecute, 0) = 0
       ORDER BY t.vrdate DESC, t.vrno DESC
         `;
 

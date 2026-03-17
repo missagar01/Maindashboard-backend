@@ -21,11 +21,11 @@ function validateEnv() {
   ];
 
   const missing = required.filter(key => !process.env[key] || process.env[key].trim() === '');
-  
+
   if (missing.length > 0) {
     const errorMsg = `❌ Missing or empty required environment variables: ${missing.join(', ')}\n` +
-                     `Please check your .env file and ensure these variables are set:\n` +
-                     missing.map(key => `  - ${key}`).join('\n');
+      `Please check your .env file and ensure these variables are set:\n` +
+      missing.map(key => `  - ${key}`).join('\n');
     console.error(errorMsg);
     throw new Error(errorMsg);
   }
@@ -33,10 +33,10 @@ function validateEnv() {
   console.log('✅ All required Oracle environment variables are set');
   console.log('🔧 Oracle Config:', {
     user: process.env.ORACLE_USER,
-    connectString: process.env.ORACLE_CONNECTION_STRING ? 
-      (process.env.ORACLE_CONNECTION_STRING.length > 50 ? 
-        process.env.ORACLE_CONNECTION_STRING.substring(0, 50) + '...' : 
-        process.env.ORACLE_CONNECTION_STRING) : 
+    connectString: process.env.ORACLE_CONNECTION_STRING ?
+      (process.env.ORACLE_CONNECTION_STRING.length > 50 ?
+        process.env.ORACLE_CONNECTION_STRING.substring(0, 50) + '...' :
+        process.env.ORACLE_CONNECTION_STRING) :
       'NOT SET'
   });
 }
@@ -46,12 +46,12 @@ async function initPool() {
   try {
     // Validate environment variables first
     validateEnv();
-    
+
     // Initialize Oracle client (will use thin mode if no client found)
     initOracleClient();
-    
+
     console.log("📡 Creating Oracle connection pool...");
-    
+
     const dbConfig = {
       user: process.env.ORACLE_USER,
       password: process.env.ORACLE_PASSWORD,

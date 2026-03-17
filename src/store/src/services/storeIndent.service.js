@@ -160,215 +160,206 @@ export async function getHistory() {
 }
 
 export async function getDashboardMetrics() {
-  return getOrSetCache(
-    cacheKeys.indentDashboard(),
-    async () => {
-      const conn = await getConnection();
-      try {
-        const statusMetrics = await conn.execute(
-          `
-          SELECT
-            COUNT(*) AS total_indents,
-            COUNT(CASE WHEN t.po_no IS NOT NULL THEN 1 END) AS completed_indents,
-            COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL THEN 1 END) AS pending_indents,
-            COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL AND t.vrdate >= SYSDATE - 7 THEN 1 END) AS upcoming_indents,
-            COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL AND t.vrdate < SYSDATE - 30 THEN 1 END) AS overdue_indents,
-            NVL(SUM(NVL(t.qtyindent, 0)), 0) AS total_indented_qty
-          FROM view_indent_engine t
-          WHERE ${DASHBOARD_INDENT_WHERE}
-          `,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
+  // Bypassing cache for debugging
+  const conn = await getConnection();
+  try {
+    // Get status-based metrics (like housekeeping dashboard)
+    const statusMetrics = await conn.execute(
+      `
+      SELECT
+        COUNT(*) AS total_indents,
+        COUNT(CASE WHEN t.po_no IS NOT NULL THEN 1 END) AS completed_indents,
+        COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL THEN 1 END) AS pending_indents,
+        COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL AND t.vrdate >= SYSDATE - 7 THEN 1 END) AS upcoming_indents,
+        COUNT(CASE WHEN t.po_no IS NULL AND t.cancelleddate IS NULL AND t.vrdate < SYSDATE - 30 THEN 1 END) AS overdue_indents,
+        NVL(SUM(NVL(t.qtyindent, 0)), 0) AS total_indented_qty
+      FROM view_indent_engine t
+      WHERE ${DASHBOARD_INDENT_WHERE}
+      `,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
 
-        const statusData = statusMetrics.rows?.[0] || {};
-        const totalIndents = toNumber(statusData.TOTAL_INDENTS);
-        const completedIndents = toNumber(statusData.COMPLETED_INDENTS);
-        const pendingIndents = toNumber(statusData.PENDING_INDENTS);
-        const upcomingIndents = toNumber(statusData.UPCOMING_INDENTS);
-        const overdueIndents = toNumber(statusData.OVERDUE_INDENTS);
-        const overallProgress = totalIndents > 0 ? (completedIndents / totalIndents) * 100 : 0;
-        const completedPercent = totalIndents > 0 ? (completedIndents / totalIndents) * 100 : 0;
-        const pendingPercent = totalIndents > 0 ? (pendingIndents / totalIndents) * 100 : 0;
-        const upcomingPercent = totalIndents > 0 ? (upcomingIndents / totalIndents) * 100 : 0;
-        const overduePercent = totalIndents > 0 ? (overdueIndents / totalIndents) * 100 : 0;
+    const statusData = statusMetrics.rows?.[0] || {};
+    const totalIndents = toNumber(statusData.TOTAL_INDENTS);
+    const completedIndents = toNumber(statusData.COMPLETED_INDENTS);
+    const pendingIndents = toNumber(statusData.PENDING_INDENTS);
+    const upcomingIndents = toNumber(statusData.UPCOMING_INDENTS);
+    const overdueIndents = toNumber(statusData.OVERDUE_INDENTS);
 
-        const purchaseSummary = await conn.execute(
-          `
-          SELECT
-            COUNT(*) AS total_purchase_orders,
-            NVL(SUM(NVL(t.qtyorder, 0)), 0) AS total_purchased_qty
-          FROM view_order_engine t
-          WHERE ${DASHBOARD_PURCHASE_WHERE}
-          `,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
+    // Calculate overall progress percentages
+    const overallProgress = totalIndents > 0 ? (completedIndents / totalIndents) * 100 : 0;
+    const completedPercent = totalIndents > 0 ? (completedIndents / totalIndents) * 100 : 0;
+    const pendingPercent = totalIndents > 0 ? (pendingIndents / totalIndents) * 100 : 0;
+    const upcomingPercent = totalIndents > 0 ? (upcomingIndents / totalIndents) * 100 : 0;
+    const overduePercent = totalIndents > 0 ? (overdueIndents / totalIndents) * 100 : 0;
 
-        const poPendingResult = await conn.execute(
-          `
-          SELECT COUNT(*) AS count
-          FROM view_order_engine t
-          WHERE t.entity_code = 'SR'
-            AND t.series = 'U3'
-            AND NVL(t.qtycancelled, 0) = 0
-            AND NVL(t.qtyexecute, 0) < NVL(t.qtyorder, 0)
-          `,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
-        const pendingPurchaseOrders = toNumber(
-          poPendingResult.rows?.[0]?.COUNT || poPendingResult.rows?.[0]?.count
-        );
+    const purchaseSummary = await conn.execute(
+      `
+      SELECT
+        COUNT(*) AS total_purchase_orders,
+        NVL(SUM(NVL(t.qtyorder, 0)), 0) AS total_purchased_qty
+      FROM view_order_engine t
+      WHERE ${DASHBOARD_PURCHASE_WHERE}
+    `,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
 
-        let issuedTotal = 0;
-        try {
-          const issuedResult = await conn.execute(
-            `
-            SELECT
-              NVL(SUM(NVL(t.qtyissue, 0)), 0) AS total_issued_qty
-            FROM view_issue_engine t
-            WHERE ${DASHBOARD_ISSUE_WHERE}
-            `,
-            [],
-            { outFormat: oracledb.OUT_FORMAT_OBJECT }
-          );
-          issuedTotal = toNumber(issuedResult.rows?.[0]?.TOTAL_ISSUED_QTY);
-        } catch (err) {
-          console.warn("[getDashboardMetrics] issue summary failed:", err.message || err);
-        }
+    const poPendingResult = await conn.execute(
+      `
+      SELECT COUNT(*) AS count
+      FROM view_order_engine t
+      WHERE t.entity_code = 'SR'
+        AND t.series = 'U3'
+        AND NVL(t.qtycancelled, 0) = 0
+        AND NVL(t.qtyexecute, 0) < NVL(t.qtyorder, 0)
+      `,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    const pendingPurchaseOrders = toNumber(poPendingResult.rows?.[0]?.COUNT || poPendingResult.rows?.[0]?.count);
 
-        let outOfStockCount = 0;
-        try {
-          const stockResult = await conn.execute(
-            `
-            SELECT
-              COUNT(*) AS out_of_stock_count
-            FROM view_item_stock_engine t
-            WHERE ${DASHBOARD_STOCK_WHERE}
-            `,
-            [],
-            { outFormat: oracledb.OUT_FORMAT_OBJECT }
-          );
-          outOfStockCount = toNumber(stockResult.rows?.[0]?.OUT_OF_STOCK_COUNT);
-        } catch (err) {
-          console.warn("[getDashboardMetrics] stock summary failed:", err.message || err);
-        }
+    let issuedTotal = 0;
+    try {
+      const issuedResult = await conn.execute(
+        `
+        SELECT
+          NVL(SUM(NVL(t.qtyissue, 0)), 0) AS total_issued_qty
+        FROM view_issue_engine t
+        WHERE ${DASHBOARD_ISSUE_WHERE}
+      `,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      issuedTotal = toNumber(issuedResult.rows?.[0]?.TOTAL_ISSUED_QTY);
+    } catch (err) {
+      console.warn("[getDashboardMetrics] issue summary failed:", err.message || err);
+    }
 
-        const productsResult = await conn.execute(
-          `
-          SELECT upper(trim(t.item_name)) as item_name
-          FROM item_mast t
-          WHERE t.item_nature = 'SI'
-          ORDER BY upper(trim(t.item_name)) asc
-          `,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
+    let outOfStockCount = 0;
+    try {
+      const stockResult = await conn.execute(
+        `
+        SELECT
+          COUNT(*) AS out_of_stock_count
+        FROM view_item_stock_engine t
+        WHERE ${DASHBOARD_STOCK_WHERE}
+      `,
+        [],
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      outOfStockCount = toNumber(stockResult.rows?.[0]?.OUT_OF_STOCK_COUNT);
+    } catch (err) {
+      console.warn("[getDashboardMetrics] stock summary failed:", err.message || err);
+    }
 
-        const vendorsResult = await conn.execute(
-          `
-          SELECT UPPER(TRIM(t.acc_name)) AS acc_name
-          FROM acc_mast t
-          WHERE t.acc_type = 'C'
-          ORDER BY TRIM(t.acc_name) ASC
-          `,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
+    const productsResult = await conn.execute(
+      `
+      SELECT upper(trim(t.item_name)) as item_name
+      FROM item_mast t
+      WHERE t.item_nature = 'SI'
+      ORDER BY upper(trim(t.item_name)) asc
+      `,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    console.log(`[getDashboardMetrics] Products found: ${productsResult.rows?.length}`);
 
-        const purchaseRow = purchaseSummary.rows?.[0] ?? {};
+    const vendorsResult = await conn.execute(
+      `
+      SELECT UPPER(TRIM(t.acc_name)) AS acc_name
+      FROM acc_mast t
+      WHERE t.acc_type = 'C'
+      ORDER BY TRIM(t.acc_name) ASC
+      `,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    console.log(`[getDashboardMetrics] Vendors found: ${vendorsResult.rows?.length}`);
 
-        return {
-          totalIndents,
-          completedIndents,
-          pendingIndents,
-          upcomingIndents,
-          overdueIndents,
-          pendingPurchaseOrders,
-          overallProgress: Math.round(overallProgress * 10) / 10,
-          completedPercent: Math.round(completedPercent * 10) / 10,
-          pendingPercent: Math.round(pendingPercent * 10) / 10,
-          upcomingPercent: Math.round(upcomingPercent * 10) / 10,
-          overduePercent: Math.round(overduePercent * 10) / 10,
-          totalIndentedQuantity: toNumber(statusData.TOTAL_INDENTED_QTY || 0),
-          totalPurchaseOrders: toNumber(purchaseRow.TOTAL_PURCHASE_ORDERS),
-          totalPurchasedQuantity: toNumber(purchaseRow.TOTAL_PURCHASED_QTY),
-          totalIssuedQuantity: issuedTotal,
-          outOfStockCount,
-          topPurchasedItems: (productsResult.rows ?? []).map((row) => ({
-            itemName:
-              row.ITEM_NAME || row.item_name || row.ITEM_NAME_1 || row.PRODUCT_NAME || row.product_name,
-            orderCount: 0,
-            totalOrderQty: 0,
-          })),
-          topVendors: (vendorsResult.rows ?? []).map((row) => ({
-            vendorName:
-              row.ACC_NAME || row.acc_name || row.VENDOR_NAME_1 || row.VENDOR_NAME || row.vendor_name,
-            uniquePoCount: 0,
-            totalItems: 0,
-          })),
-        };
-      } finally {
-        await conn.close();
-      }
-    },
-    DEFAULT_TTL.DASHBOARD
-  );
+    const purchaseRow = purchaseSummary.rows?.[0] ?? {};
+
+    const metrics = {
+      // Status-based metrics (like housekeeping dashboard)
+      totalIndents: totalIndents,
+      completedIndents: completedIndents,
+      pendingIndents: pendingIndents,
+      upcomingIndents: upcomingIndents,
+      overdueIndents: overdueIndents,
+      pendingPurchaseOrders: pendingPurchaseOrders,
+
+      // Overall progress percentages
+      overallProgress: Math.round(overallProgress * 10) / 10,
+      completedPercent: Math.round(completedPercent * 10) / 10,
+      pendingPercent: Math.round(pendingPercent * 10) / 10,
+      upcomingPercent: Math.round(upcomingPercent * 10) / 10,
+      overduePercent: Math.round(overduePercent * 10) / 10,
+
+      // Quantity metrics
+      totalIndentedQuantity: toNumber(statusData.TOTAL_INDENTED_QTY || 0),
+      totalPurchaseOrders: toNumber(purchaseRow.TOTAL_PURCHASE_ORDERS),
+      totalPurchasedQuantity: toNumber(purchaseRow.TOTAL_PURCHASED_QTY),
+      totalIssuedQuantity: issuedTotal,
+      outOfStockCount,
+      topPurchasedItems: (productsResult.rows ?? []).map((row) => ({
+        itemName: row.ITEM_NAME || row.item_name || row.ITEM_NAME_1 || row.PRODUCT_NAME || row.product_name,
+        orderCount: 0,
+        totalOrderQty: 0,
+      })),
+      topVendors: (vendorsResult.rows ?? []).map((row) => ({
+        vendorName: row.ACC_NAME || row.acc_name || row.VENDOR_NAME_1 || row.VENDOR_NAME || row.vendor_name,
+        uniquePoCount: 0,
+        totalItems: 0,
+      })),
+    };
+
+    return metrics;
+  } finally {
+    await conn.close();
+  }
 }
 
 /**
  * 🔹 Get All Vendors (Master Table)
  */
 export async function getAllVendors() {
-  return getOrSetCache(
-    cacheKeys.vendorsMaster(),
-    async () => {
-      const conn = await getConnection();
-      try {
-        const result = await conn.execute(
-          `SELECT UPPER(TRIM(t.acc_name)) AS vendor_name
-           FROM acc_mast t
-           WHERE t.acc_type = 'C'
-           ORDER BY TRIM(t.acc_name) ASC`,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
-        return (result.rows || []).map((row) => ({
-          vendorName: row.VENDOR_NAME || row.vendor_name || row.ACC_NAME || row.acc_name,
-        }));
-      } finally {
-        await conn.close();
-      }
-    },
-    DEFAULT_TTL.ITEMS
-  );
+  const conn = await getConnection();
+  try {
+    const result = await conn.execute(
+      `SELECT UPPER(TRIM(t.acc_name)) AS vendor_name
+       FROM acc_mast t
+       WHERE t.acc_type = 'C'
+       ORDER BY TRIM(t.acc_name) ASC`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    return (result.rows || []).map(row => ({
+      vendorName: row.VENDOR_NAME || row.vendor_name || row.ACC_NAME || row.acc_name
+    }));
+  } finally {
+    await conn.close();
+  }
 }
 
 /**
  * 🔹 Get All Products (Master Table)
  */
 export async function getAllProducts() {
-  return getOrSetCache(
-    cacheKeys.productsMaster(),
-    async () => {
-      const conn = await getConnection();
-      try {
-        const result = await conn.execute(
-          `SELECT upper(trim(t.item_name)) as product_name
-           FROM item_mast t
-           WHERE t.item_nature = 'SI'
-           ORDER BY upper(trim(t.item_name)) asc`,
-          [],
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-        );
-        return (result.rows || []).map((row) => ({
-          itemName: row.PRODUCT_NAME || row.product_name || row.ITEM_NAME || row.item_name,
-        }));
-      } finally {
-        await conn.close();
-      }
-    },
-    DEFAULT_TTL.ITEMS
-  );
+  const conn = await getConnection();
+  try {
+    const result = await conn.execute(
+      `SELECT upper(trim(t.item_name)) as product_name
+       FROM item_mast t
+       WHERE t.item_nature = 'SI'
+       ORDER BY upper(trim(t.item_name)) asc`,
+      [],
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    return (result.rows || []).map(row => ({
+      itemName: row.PRODUCT_NAME || row.product_name || row.ITEM_NAME || row.item_name
+    }));
+  } finally {
+    await conn.close();
+  }
 }

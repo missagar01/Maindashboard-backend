@@ -1,5 +1,9 @@
 import pool from "../config/postgres.js";
 import { getOrSetCache, deleteCache, cacheKeys, DEFAULT_TTL } from "./redisCache.js";
+import * as storeIndentService from "./storeIndent.service.js";
+import * as poService from "./po.service.js";
+import * as repairGatePassService from "./repairGatePass.service.js";
+import * as returnableService from "./returnable.service.js";
 
 function isMissingTableError(error) {
   return String(error?.message || "").includes("does not exist");
@@ -27,11 +31,21 @@ export async function fetchDashboardMetricsSnapshot() {
     async () => {
       try {
         const [
+          // Original Repair System queries
           tasksResult,
           statsResult,
           deptWiseResult,
           paymentResult,
           vendorResult,
+          // New Consolidated Data
+          indentSummary,
+          pendingIndents,
+          historyIndents,
+          poPendingData,
+          poHistoryData,
+          repairPending,
+          repairHistory,
+          returnableDetails
         ] = await Promise.all([
           pool.query(`
             SELECT *
@@ -64,11 +78,21 @@ export async function fetchDashboardMetricsSnapshot() {
             ORDER BY cost DESC
             LIMIT 5
           `),
+          // Store Data Calls
+          storeIndentService.getDashboardMetrics(),
+          storeIndentService.getPending(),
+          storeIndentService.getHistory(),
+          poService.getPoPending(),
+          poService.getPoHistory(),
+          repairGatePassService.getPendingRepairGatePass(),
+          repairGatePassService.getReceivedRepairGatePass(),
+          returnableService.getReturnableDetails()
         ]);
 
         const stats = statsResult.rows?.[0] || {};
 
         return {
+          // Original structure maintained
           tasks: tasksResult.rows || [],
           pendingCount: Number(stats.pending_count || 0),
           completedCount: Number(stats.completed_count || 0),
@@ -76,6 +100,16 @@ export async function fetchDashboardMetricsSnapshot() {
           departmentStatus: deptWiseResult.rows || [],
           paymentTypeDistribution: paymentResult.rows || [],
           vendorWiseCosts: vendorResult.rows || [],
+
+          // New Consolidated Store Data
+          summary: indentSummary || {},
+          pendingIndents: pendingIndents || [],
+          historyIndents: historyIndents || [],
+          poPending: poPendingData?.rows || [],
+          poHistory: poHistoryData?.rows || [],
+          repairPending: repairPending || [],
+          repairHistory: repairHistory || [],
+          returnableDetails: returnableDetails || []
         };
       } catch (error) {
         console.error("Error in fetchDashboardMetricsSnapshot:", error.message || error);

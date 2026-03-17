@@ -256,26 +256,44 @@ export async function getConnection() {
       }
 
       connection = await activePool.getConnection();
+      // Test the connection immediately
       await connection.execute("SELECT 1 FROM DUAL");
       return connection;
     } catch (error) {
       lastError = error;
 
       if (connection) {
-        await connection.close().catch(() => {});
+        try {
+          await connection.close();
+        } catch (closeErr) {
+          // Ignore close errors on already broken connections
+        }
       }
 
       if (!isTransientOracleError(error) || attempt === connectRetries) {
+        // If we've exhausted retries or it's a non-transient error, 
+        // we might need to reset the pool for the next caller.
+        if (attempt === connectRetries) {
+          console.error(`Store Oracle connection failed after ${connectRetries} attempts. Clearing pool.`);
+          poolPromise = null;
+          pool = null;
+        }
         break;
       }
 
       console.warn(
-        `Store Oracle connection attempt ${attempt}/${connectRetries} failed: ${error.message}`
+        `Store Oracle connection attempt ${attempt}/${connectRetries} failed: ${error.message}. Retrying...`
       );
 
-      poolPromise = null;
-      await closePoolInternal();
-      await delay(attempt * 1000);
+      // Don't close the entire pool here as it kills other concurrent queries.
+      // Just clear local references to force re-init on NEXT call if this connection failure 
+      // suggests the pool is fundamentally broken.
+      if (error.message.includes("NJS-040") || error.message.includes("NJS-500")) {
+        poolPromise = null;
+        pool = null;
+      }
+
+      await delay(attempt * 500); // Shorter delay for faster recovery
     }
   }
 
