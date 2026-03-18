@@ -1,7 +1,6 @@
 const { getConnection } = require("../config/db.js");
 const oracledb = require("oracledb");
-const { generateCacheKey, withCache, DEFAULT_TTL } = require("../utils/cacheHelper.js");
-
+const { getCached, setCached, DEFAULT_TTL } = require("../utils/cacheHelper.js");
 
 // Query uses optional filters via bind params (exact match on party/item, date range on indate)
 const BASE_DASHBOARD_QUERY = `
@@ -299,7 +298,6 @@ GROUP BY
 ORDER BY sales_person
 `;
 
-
 const PENDING_ORDERS_STATS_QUERY = `
 SELECT
   CASE
@@ -359,6 +357,167 @@ function parseDateParam(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function buildEmptyResponse(p_party, p_item, p_sales, p_state, safeFrom, safeTo) {
+  return {
+    summary: {
+      monthlyStats: [],
+      pendingStats: [],
+      gdStats: [],
+      saudaAvg: [],
+      allSaudaAvg: [],
+      salesAvg: [],
+      saudaRate2026: 0,
+      stateDistribution: [],
+    },
+    filters: {
+      parties: [],
+      items: [],
+      salesPersons: [],
+      states: [],
+    },
+    rows: [],
+    lastUpdated: new Date().toISOString(),
+    appliedFilters: {
+      fromDate: safeFrom,
+      toDate: safeTo,
+      partyName: p_party,
+      itemName: p_item,
+      salesPerson: p_sales,
+      state: p_state,
+    },
+  };
+}
+
+// -----------------------------------------------------------------------------
+// BACKGROUND DATA FETCH SYSTEM
+// Executes heavy Oracle queries using Promise.allSettled for fault tolerance,
+// formats exactly to API structure, and stores directly in Redis.
+// -----------------------------------------------------------------------------
+async function refreshOracleDashboardData(params, cacheKey, binds, summaryDateBinds, safeFrom, safeTo) {
+  let connection;
+  try {
+    connection = await getConnection();
+    if (!connection) {
+      throw new Error("Failed to establish Oracle database connection");
+    }
+
+    const { p_party, p_item, p_sales, p_state } = binds;
+
+    const queries = [
+      connection.execute(BASE_DASHBOARD_QUERY, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(MONTHLY_STATS_QUERY, summaryDateBinds, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(PENDING_ORDERS_STATS_QUERY, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(SAUDA_AVERAGE_QUERY, summaryDateBinds, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(SALES_AVG_QUERY, summaryDateBinds, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(SAUDA_RATE_TREND_QUERY, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(GD_QUERY, summaryDateBinds, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(FILTERS_QUERY, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(ALL_SAUDA_AVERAGE_QUERY, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+      connection.execute(STATE_DISTRIBUTION_QUERY, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT })
+    ];
+
+    const results = await Promise.allSettled(queries);
+
+    // Error tolerance: Use data if fulfilled, otherwise fallback to empty array
+    const [
+      result, monthlyRes, pendingRes, saudaAvgRes, salesAvgRes,
+      saudaRateRes, gdRes, filtersRes, allSaudaAvgRes, stateDistributionRes
+    ] = results.map(res => res.status === 'fulfilled' ? res.value : { rows: [] });
+
+    const rows = result.rows || [];
+    const filterRows = filtersRes.rows || [];
+    
+    // Extract aggregate stats
+    const monthlyStats = monthlyRes.rows || [];
+    const pendingStats = pendingRes.rows || [];
+    const gdStats = gdRes.rows || [];
+    const saudaRateRow = (saudaRateRes.rows && saudaRateRes.rows[0]) ? saudaRateRes.rows[0] : {};
+    const stateDistribution = stateDistributionRes.rows || [];
+
+    const saudaAvg = saudaAvgRes.rows || [];
+    const salesAvg = salesAvgRes.rows || [];
+    const allSaudaAvg = allSaudaAvgRes.rows || [];
+    const saudaRate2026 = saudaRateRow.AVERAGE || 0;
+
+    const uniqueParties = Array.from(new Set(filterRows.map((r) => r.PARTY_NAME).filter(Boolean)));
+    const uniqueItems = Array.from(new Set(filterRows.map((r) => r.ITEM_NAME).filter(Boolean)));
+    const uniqueSales = Array.from(new Set(filterRows.map((r) => r.SALES_PERSON).filter(Boolean)));
+    const uniqueStates = Array.from(new Set(filterRows.map((r) => (r.STATE ? r.STATE.trim() : "")).filter(Boolean)));
+
+    const dataRows = rows.map((r) => ({
+      indate: r.INDATE,
+      outdate: r.OUTDATE,
+      gateOutTime: r.GATE_OUT_TIME,
+      orderVrno: r.ORDER_VRNO,
+      gateVrno: r.GATE_VRNO,
+      wslipno: r.WSLIPNO,
+      salesPerson: r.SALES_PERSON,
+      state: r.STATE,
+      partyName: r.PARTY_NAME,
+      itemName: r.ITEM_NAME,
+      invoiceNo: r.INVOICE_NO,
+    }));
+
+    // Construct exactly matching output format WITHOUT restructuring response
+    const payload = {
+      summary: {
+        monthlyStats,
+        pendingStats,
+        gdStats,
+        saudaAvg,
+        allSaudaAvg,
+        salesAvg,
+        saudaRate2026,
+        stateDistribution,
+      },
+      filters: {
+        parties: uniqueParties,
+        items: uniqueItems,
+        salesPersons: uniqueSales,
+        states: uniqueStates,
+      },
+      rows: dataRows,
+      lastUpdated: new Date().toISOString(),
+      appliedFilters: {
+        fromDate: safeFrom,
+        toDate: safeTo,
+        partyName: p_party,
+        itemName: p_item,
+        salesPerson: p_sales,
+        state: p_state,
+      },
+    };
+
+    // Store final processed JSON in Redis. 300 seconds TTL.
+    await setCached(cacheKey, payload, DEFAULT_TTL.DASHBOARD || 300);
+
+    return payload;
+
+  } catch (error) {
+    console.error("❌ Error in refreshOracleDashboardData:", error.message);
+    const fallback = buildEmptyResponse(binds.p_party, binds.p_item, binds.p_sales, binds.p_state, safeFrom, safeTo);
+    await setCached(cacheKey, fallback, 30); // short TTL on DB failure block
+    return fallback;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (closeError) {
+        console.error("⚠️ Error closing Oracle connection:", closeError.message);
+      }
+    }
+  }
+}
+
+
+// Track first-time fetches globally to apply the blocking optimization constraint
+const firstRequestTracking = new Set();
+
+
+// -----------------------------------------------------------------------------
+// CACHE-FIRST DASHBOARD API
+// Instantly returns data if stored, fires background queries, enforces constraints
+// -----------------------------------------------------------------------------
 async function getDashboardData({
   fromDate,
   toDate,
@@ -367,191 +526,52 @@ async function getDashboardData({
   salesPerson,
   stateName,
 } = {}) {
-  const shouldUseMockData =
-    process.env.FORCE_MOCK_DASHBOARD === "true" || process.env.NODE_ENV !== "production";
 
-  // Generate cache key from parameters
-  const cacheKey = generateCacheKey("dashboard", {
-    fromDate: fromDate || "default",
-    toDate: toDate || "default",
-    partyName: partyName || "",
-    itemName: itemName || "",
-    salesPerson: salesPerson || "",
-    stateName: stateName || "",
-  });
+  // Setup boundaries defaults
+  const today = new Date();
+  const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1);
+  const defaultTo = today;
 
-  // Use cache wrapper
-  return await withCache(cacheKey, DEFAULT_TTL.DASHBOARD, async () => {
-    // Defaults: Use CURRENT MONTH for summary metrics (from start of month to TODAY)
-    const today = new Date();
-    const defaultFrom = new Date(today.getFullYear(), today.getMonth(), 1); // First day of current month
-    const defaultTo = today; // Today (not last day of month)
+  const p_party = partyName || null;
+  const p_item = itemName || null;
+  const p_sales = salesPerson || null;
+  const p_state = stateName || null;
 
-    const p_party = partyName || null;
-    const p_item = itemName || null;
-    const p_sales = salesPerson || null;
-    const p_state = stateName || null;
+  const parsedFrom = parseDateParam(fromDate) || defaultFrom;
+  const parsedTo = parseDateParam(toDate) || defaultTo;
 
-    const parsedFrom = parseDateParam(fromDate) || defaultFrom;
-    const parsedTo = parseDateParam(toDate) || defaultTo;
+  const safeFrom = parsedFrom.toISOString().slice(0, 10);
+  const safeTo = parsedTo.toISOString().slice(0, 10);
 
-    // Send dates as 'YYYY-MM-DD' strings so Oracle can TRUNC/TO_DATE deterministically (no timezone drift)
-    const safeFrom = parsedFrom.toISOString().slice(0, 10);
-    const safeTo = parsedTo.toISOString().slice(0, 10);
+  // Use explicit parameter-based Cache Key as requested
+  const cacheKeyStr = `dashboard_oracle_${safeFrom}_${safeTo}_${p_party || 'all'}_${p_item || 'all'}_${p_sales || 'all'}_${p_state || 'all'}`;
 
-    // Base query binds - NO date filtering (shows all data from April 2025)
-    const binds = {
-      p_party,
-      p_item,
-      p_sales,
-      p_state,
-    };
+  // STEP 1: Check Redis cache
+  const cachedData = await getCached(cacheKeyStr);
 
-    // Summary queries binds - WITH date filtering (current month or selected month)
-    const summaryDateBinds = {
-      p_from_date: safeFrom,
-      p_to_date: safeTo,
-    };
+  // IF FOUND: return data immediately
+  if (cachedData) {
+    return cachedData;
+  }
 
-    let connection;
-    try {
-      connection = await getConnection();
-      if (!connection) {
-        throw new Error("Failed to establish Oracle database connection");
-      }
+  // IF NOT FOUND -> Prepare constraints
+  const binds = { p_party, p_item, p_sales, p_state };
+  const summaryDateBinds = { p_from_date: safeFrom, p_to_date: safeTo };
 
-      const [result, monthlyRes, pendingRes, saudaAvgRes, salesAvgRes, saudaRateRes, gdRes, filtersRes, allSaudaAvgRes, stateDistributionRes] = await Promise.all([
-        connection.execute(BASE_DASHBOARD_QUERY, binds, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(MONTHLY_STATS_QUERY, summaryDateBinds, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(PENDING_ORDERS_STATS_QUERY, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(SAUDA_AVERAGE_QUERY, summaryDateBinds, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(SALES_AVG_QUERY, summaryDateBinds, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(SAUDA_RATE_TREND_QUERY, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(GD_QUERY, summaryDateBinds, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(FILTERS_QUERY, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(ALL_SAUDA_AVERAGE_QUERY, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        }),
-        connection.execute(STATE_DISTRIBUTION_QUERY, {}, {
-          outFormat: oracledb.OUT_FORMAT_OBJECT,
-        })
-      ]);
+  // FIRST LOAD OPTIMIZATION: If cache is missing AND it's the first time
+  if (!firstRequestTracking.has(cacheKeyStr)) {
+    firstRequestTracking.add(cacheKeyStr);
+    
+    // ONE blocking fetch (await background data builder directly)
+    return await refreshOracleDashboardData(params = {}, cacheKeyStr, binds, summaryDateBinds, safeFrom, safeTo);
+  }
 
-      const rows = result.rows || [];
-      const filterRows = filtersRes.rows || [];
-      // Extract aggregate stats
-      const monthlyStats = monthlyRes.rows || [];
-      const pendingStats = pendingRes.rows || [];
-      const gdStats = gdRes.rows || [];
-      const saudaRateRow = (saudaRateRes.rows && saudaRateRes.rows[0]) ? saudaRateRes.rows[0] : {};
-      const stateDistribution = stateDistributionRes ? stateDistributionRes.rows || [] : [];
+  // AFTER FIRST LOAD: If not found but NOT first load 
+  // Trigger background job asynchronously (NON-BLOCKING)
+  refreshOracleDashboardData(params = {}, cacheKeyStr, binds, summaryDateBinds, safeFrom, safeTo).catch(console.error);
 
-      // Calculate totals for backward compatibility if needed, or just pass the array
-      // const monthlyWorkingParty = mRow.MONTHLY_WORKING_PARTY || 0;
-      // const monthlyPartyAverage = mRow.MONTHLY_PARTY_AVERAGE || '0%';
-      // const pendingOrdersTotal = pRow.TOTAL || 0;
-      // const conversionRatio = pRow.CONVERSION_RATIO || '0%';
-
-      const saudaAvg = saudaAvgRes.rows || [];
-      const salesAvg = salesAvgRes.rows || [];
-      const allSaudaAvg = allSaudaAvgRes.rows || [];
-      const saudaRate2026 = saudaRateRow.AVERAGE || 0;
-      // const monthlyGd = gdRow.MONTHLY_GD || 0;
-      // const dailyGd = gdRow.DAILY_GD || 0;
-
-
-      // Gate/Dispatch stats calculation removed
-
-
-      const uniqueParties = Array.from(
-        new Set(filterRows.map((r) => r.PARTY_NAME).filter(Boolean))
-      );
-      const uniqueItems = Array.from(
-        new Set(filterRows.map((r) => r.ITEM_NAME).filter(Boolean))
-      );
-      const uniqueSales = Array.from(
-        new Set(filterRows.map((r) => r.SALES_PERSON).filter(Boolean))
-      );
-      const uniqueStates = Array.from(
-        new Set(filterRows.map((r) => (r.STATE ? r.STATE.trim() : "")).filter(Boolean))
-      );
-
-      const dataRows = rows.map((r) => ({
-        indate: r.INDATE,
-        outdate: r.OUTDATE,
-        gateOutTime: r.GATE_OUT_TIME,
-        orderVrno: r.ORDER_VRNO,
-        gateVrno: r.GATE_VRNO,
-        wslipno: r.WSLIPNO,
-        salesPerson: r.SALES_PERSON,
-        state: r.STATE,
-        partyName: r.PARTY_NAME,
-        itemName: r.ITEM_NAME,
-        invoiceNo: r.INVOICE_NO,
-      }));
-
-      return {
-        summary: {
-          monthlyStats,
-          pendingStats,
-          gdStats,
-          saudaAvg,
-          allSaudaAvg,
-          salesAvg,
-          saudaRate2026,
-          stateDistribution,
-        },
-        filters: {
-          parties: uniqueParties,
-          items: uniqueItems,
-          salesPersons: uniqueSales,
-          states: uniqueStates,
-        },
-        rows: dataRows,
-        lastUpdated: new Date().toISOString(),
-        appliedFilters: {
-          fromDate: safeFrom,
-          toDate: safeTo,
-          partyName: p_party,
-          itemName: p_item,
-          salesPerson: p_sales,
-          state: p_state,
-        },
-      };
-    } catch (error) {
-      console.error("❌ Error in getDashboardData:", error.message);
-      if (shouldUseMockData) {
-        console.warn("⚠️ Serving mock dashboard data because Oracle is unavailable.");
-
-      }
-      // Re-throw with more context
-      throw new Error(`Dashboard data fetch failed: ${error.message}`);
-    } finally {
-      if (connection) {
-        try {
-          await connection.close();
-        } catch (closeError) {
-          console.error("⚠️ Error closing Oracle connection:", closeError.message);
-        }
-      }
-    }
-  });
+  // Return fallback empty response IMMEDIATELY
+  return buildEmptyResponse(p_party, p_item, p_sales, p_state, safeFrom, safeTo);
 }
 
 module.exports = { getDashboardData };
