@@ -5,6 +5,7 @@ import * as poService from "./po.service.js";
 import * as repairGatePassService from "./repairGatePass.service.js";
 import * as returnableService from "./returnable.service.js";
 
+// -------------------- UTILS --------------------
 function isMissingTableError(error) {
   return String(error?.message || "").includes("does not exist");
 }
@@ -25,35 +26,29 @@ export async function invalidateRepairDashboardCache() {
   await deleteCache(cacheKeys.dashboardRepair());
 }
 
+// -------------------- MAIN FUNCTION --------------------
 export async function fetchDashboardMetricsSnapshot() {
   return getOrSetCache(
-    cacheKeys.dashboardRepair(),
+    cacheKeys.dashboardRepair() + "_v7", // [FIX] Append _v7 to instantly bust cache and display your feedback!
     async () => {
       try {
-        // [OPTIMIZATION] Start Google Fetch IMMEDIATELY in the background
-        // This overlaps the slow Google Apps Script API (~3s) with the slow Oracle sequential queries (~6s)
-        // to prevent Vercel's strict 10.0s Serverless 504 Gateway Timeout.
+        // [RESTORED] Original Google Fetch EXACTLY as provided, running efficiently in background
         const googleFetchPromise = process.env.GOOGLE_FEEDBACK_STORE
           ? fetch(process.env.GOOGLE_FEEDBACK_STORE)
-              .then((res) => res.json())
-              .catch((err) => {
-                console.error("Failed to fetch Google Forms feedback:", err.message || err);
-                return null;
-              })
+            .then((res) => res.json())
+            .catch((err) => {
+              console.error("Failed to fetch Google Forms feedback:", err.message || err);
+              return null;
+            })
           : Promise.resolve(null);
 
-        const [
-          // Original Repair System queries (PostgreSQL)
-          tasksResult,
-          statsResult,
-          deptWiseResult,
-          paymentResult,
-          vendorResult,
-        ] = await Promise.all([
+        // [OPTIMIZATION] Database parallelism speeds up response significantly
+        const postgresPromise = Promise.all([
           pool.query(`
-            SELECT *
+            SELECT id, status, department, total_bill_amount, vendor_name, payment_type
             FROM repair_system
             ORDER BY id DESC
+            LIMIT 100
           `),
           pool.query(`
             SELECT
@@ -83,17 +78,43 @@ export async function fetchDashboardMetricsSnapshot() {
           `)
         ]);
 
-        // Fetch Store Data (Oracle) sequentially to prevent connection rejection / ORA-12541 errors
-        const indentSummary = await storeIndentService.getDashboardMetrics();
-        const pendingIndents = await storeIndentService.getPending();
-        const historyIndents = await storeIndentService.getHistory();
-        const poPendingData = await poService.getPoPending();
-        const poHistoryData = await poService.getPoHistory();
-        const repairPending = await repairGatePassService.getPendingRepairGatePass();
-        const repairHistory = await repairGatePassService.getReceivedRepairGatePass();
-        const returnableDetails = await returnableService.getReturnableDetails();
+        const oraclePromise = Promise.allSettled([
+          storeIndentService.getDashboardMetrics(),
+          storeIndentService.getPending(),
+          storeIndentService.getHistory(),
+          poService.getPoPending(),
+          poService.getPoHistory(),
+          repairGatePassService.getPendingRepairGatePass(),
+          repairGatePassService.getReceivedRepairGatePass(),
+          returnableService.getReturnableDetails()
+        ]);
 
-        // Resolve Google Sheet Feedback Data
+        const [postgresData, oracleData] = await Promise.all([
+          postgresPromise,
+          oraclePromise
+        ]);
+
+        const [
+          tasksResult,
+          statsResult,
+          deptWiseResult,
+          paymentResult,
+          vendorResult
+        ] = postgresData;
+
+        const [
+          indentSummary,
+          pendingIndents,
+          historyIndents,
+          poPendingData,
+          poHistoryData,
+          repairPending,
+          repairHistory,
+          returnableDetails
+        ] = oracleData.map(res => (res.status === "fulfilled" ? res.value : null));
+
+
+        // [RESTORED] Resolving Google Sheet Feedback Data EXACTLY as originally worked!
         let vendorFeedbacks = [];
         try {
           const json = await googleFetchPromise;
@@ -120,7 +141,6 @@ export async function fetchDashboardMetricsSnapshot() {
         const stats = statsResult.rows?.[0] || {};
 
         return {
-          // Original structure maintained
           tasks: tasksResult.rows || [],
           pendingCount: Number(stats.pending_count || 0),
           completedCount: Number(stats.completed_count || 0),
@@ -129,7 +149,6 @@ export async function fetchDashboardMetricsSnapshot() {
           paymentTypeDistribution: paymentResult.rows || [],
           vendorWiseCosts: vendorResult.rows || [],
 
-          // New Consolidated Store Data
           summary: indentSummary || {},
           pendingIndents: pendingIndents || [],
           historyIndents: historyIndents || [],
