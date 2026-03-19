@@ -598,15 +598,21 @@ export const getStaffTasksCountService = async ({
 // ─────────────────────────────────────────────
 // DEPARTMENTS & STAFF
 // ─────────────────────────────────────────────
-export const getUniqueDepartmentsService = async () => {
+export const getUniqueDepartmentsService = async (division = null) => {
   try {
-    const query = `
+    let query = `
       SELECT department
       FROM users
       WHERE department IS NOT NULL
         AND TRIM(department) <> ''
     `;
-    const { rows } = await pool.query(query);
+    const params = [];
+    if (division && division !== "all") {
+      query += ` AND LOWER(division) = LOWER($1)`;
+      params.push(division);
+    }
+
+    const { rows } = await pool.query(query, params);
 
     const unique = [
       ...new Set(
@@ -1093,7 +1099,7 @@ export const getDivisionWiseTaskCountsService = async ({
           ontimeScore = 0;
         }
 
-        const totalScore = Math.max(Math.round(completionScore + ontimeScore), -100);
+        const totalScore = Math.max(Math.round(completionScore), -100);
 
         // Append scores directly to the total section of the department
         divisionData.total.departments[dept].scores = {
@@ -1109,4 +1115,3 @@ export const getDivisionWiseTaskCountsService = async ({
     throw new Error(error.message);
   }
 };
-

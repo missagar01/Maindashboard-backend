@@ -19,6 +19,26 @@ const corsOriginsEnv = process.env.CORS_ORIGINS;
 const corsOrigins = corsOriginsEnv
   ? corsOriginsEnv.split(",").map((origin) => origin.trim()).filter(Boolean)
   : ["*"];
+const fallbackAllowedHeaders = [
+  "Content-Type",
+  "Authorization",
+  "X-Requested-With",
+  "Accept",
+  "x-user-access1",
+  "x-user-access",
+  "x-user-role",
+  "x-page-access",
+  "x-system-access",
+  "x-user-id",
+  "x-verify-access-dept",
+  "x-user-department",
+  "x-user-division",
+];
+
+const getAllowedHeadersValue = (requestedHeaders) =>
+  typeof requestedHeaders === "string" && requestedHeaders.trim()
+    ? requestedHeaders
+    : fallbackAllowedHeaders.join(",");
 
 // Log CORS configuration on startup
 console.log('🔒 CORS Configuration:', {
@@ -33,7 +53,6 @@ const corsOptions = corsOrigins.includes("*")
     origin: true, // Allow all origins
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     preflightContinue: false,
     optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
@@ -54,7 +73,6 @@ const corsOptions = corsOrigins.includes("*")
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     preflightContinue: false,
     optionsSuccessStatus: 200 // Some browsers expect 200 for OPTIONS
@@ -96,11 +114,13 @@ app.use((req, res, next) => {
   // Override json to ensure CORS headers are set
   res.json = function (data) {
     const origin = req.headers.origin;
+    const requestedHeaders = req.headers["access-control-request-headers"];
     if (origin) {
       const isAllowed = corsOrigins.includes("*") || corsOrigins.includes(origin);
       if (isAllowed && !res.getHeader('Access-Control-Allow-Origin')) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Headers', getAllowedHeadersValue(requestedHeaders));
       }
     } else if (corsOrigins.includes("*") && !res.getHeader('Access-Control-Allow-Origin')) {
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -150,13 +170,14 @@ app.use((err, req, res, next) => {
 
   // Ensure CORS headers are ALWAYS set, even on errors
   const origin = req.headers.origin;
+  const requestedHeaders = req.headers["access-control-request-headers"];
   if (origin) {
     const isAllowed = corsOrigins.includes("*") || corsOrigins.includes(origin);
     if (isAllowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+      res.setHeader('Access-Control-Allow-Headers', getAllowedHeadersValue(requestedHeaders));
     }
   } else if (corsOrigins.includes("*")) {
     // If allowing all origins and no origin header, set wildcard
