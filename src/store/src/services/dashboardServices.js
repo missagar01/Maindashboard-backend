@@ -79,21 +79,32 @@ export async function refreshDashboardData() {
       `)
     ]);
 
-    // 5. ORACLE CALL HANDLING: Moved ALL Oracle service calls inside background job using allSettled
-    const oraclePromise = Promise.allSettled([
-      storeIndentService.getDashboardMetrics(),
-      storeIndentService.getPending(),
-      storeIndentService.getHistory(),
-      poService.getPoPending(),
-      poService.getPoHistory(),
-      repairGatePassService.getPendingRepairGatePass(),
-      repairGatePassService.getReceivedRepairGatePass(),
-      returnableService.getReturnableDetails()
-    ]);
+    // 5. ORACLE CALL HANDLING: Moved ALL Oracle service calls inside background job
+    // Running sequentially to avoid exhausting the Oracle connection pool (which causes 60000ms timeouts)
+    const oraclePromises = [
+      () => storeIndentService.getDashboardMetrics(),
+      () => storeIndentService.getPending(),
+      () => storeIndentService.getHistory(),
+      () => poService.getPoPending(),
+      () => poService.getPoHistory(),
+      () => repairGatePassService.getPendingRepairGatePass(),
+      () => repairGatePassService.getReceivedRepairGatePass(),
+      () => returnableService.getReturnableDetails()
+    ];
 
-    const [postgresData, oracleData] = await Promise.all([
-      postgresPromise,
-      oraclePromise
+    const oracleData = [];
+    for (const fetchFn of oraclePromises) {
+      try {
+        const res = await fetchFn();
+        oracleData.push(res);
+      } catch (err) {
+        console.error("Oracle fetch error in dashboard background sync:", err.message);
+        oracleData.push(null);
+      }
+    }
+
+    const [postgresData] = await Promise.all([
+      postgresPromise
     ]);
 
     const [
@@ -114,7 +125,7 @@ export async function refreshDashboardData() {
       repairPending,
       repairHistory,
       returnableDetails
-    ] = oracleData.map(res => (res.status === "fulfilled" ? res.value : null));
+    ] = oracleData;
 
 
     // Google Feedback Parsing
