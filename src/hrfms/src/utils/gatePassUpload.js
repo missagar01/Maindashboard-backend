@@ -22,23 +22,38 @@ const storage = multer.diskStorage({
   }
 });
 
+const allowedImageExtensions = new Set([
+  '.jpeg',
+  '.jpg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.heic',
+  '.heif',
+  '.jfif',
+  '.avif'
+]);
+
 const fileFilter = (_req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
   const ext = path.extname(file.originalname || '').toLowerCase();
   const mimetype = (file.mimetype || '').toLowerCase();
-  const isImage = allowedTypes.test(ext) && allowedTypes.test(mimetype);
+  const isImageMime = mimetype.startsWith('image/');
+  const isKnownExtension = allowedImageExtensions.has(ext);
+  const isImage = isImageMime || isKnownExtension;
 
   if (isImage) {
     return cb(null, true);
   }
 
-  return cb(new Error('Gatepass photo must be a JPEG/PNG/WebP/GIF image.'));
+  const error = new Error('Gatepass photo must be a valid image file.');
+  error.statusCode = 400;
+  return cb(error);
 };
 
 const uploadGatePassPhoto = multer({
   storage,
   limits: {
-    fileSize: 5 * 1024 * 1024
+    fileSize: 15 * 1024 * 1024
   },
   fileFilter
 }).single('employee_photo');
