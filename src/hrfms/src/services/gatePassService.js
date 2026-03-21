@@ -2,6 +2,25 @@ const gatePassModel = require('../models/gatePassModel');
 const { getGatePassImageUrl, normalizeGatePassImageUrl } = require('../utils/gatePassUpload');
 
 class GatePassService {
+  serializeGatePass(gatePass, baseUrl) {
+    if (!gatePass || typeof gatePass !== 'object') {
+      return gatePass;
+    }
+
+    return {
+      ...gatePass,
+      employee_photo: normalizeGatePassImageUrl(gatePass.employee_photo, baseUrl)
+    };
+  }
+
+  serializeGatePassList(gatePasses, baseUrl) {
+    if (!Array.isArray(gatePasses)) {
+      return [];
+    }
+
+    return gatePasses.map((item) => this.serializeGatePass(item, baseUrl));
+  }
+
   async getAllGatePasses(options = {}) {
     const { scope = 'all', user = null } = options;
 

@@ -24,14 +24,16 @@ class GatePassController {
 
   async getAllGatePasses(req, res, next) {
     try {
+      const baseUrl = this.buildBaseUrl(req);
       const gatePasses = await gatePassService.getAllGatePasses({
         scope: req.query?.scope,
         user: req.user
       });
+      const serializedGatePasses = gatePassService.serializeGatePassList(gatePasses, baseUrl);
       res.status(200).json({
         success: true,
-        data: gatePasses,
-        count: gatePasses.length
+        data: serializedGatePasses,
+        count: serializedGatePasses.length
       });
     } catch (error) {
       next(error);
@@ -41,10 +43,11 @@ class GatePassController {
   async getGatePassById(req, res, next) {
     try {
       const { id } = req.params;
+      const baseUrl = this.buildBaseUrl(req);
       const gatePass = await gatePassService.getGatePassById(id);
       res.status(200).json({
         success: true,
-        data: gatePass
+        data: gatePassService.serializeGatePass(gatePass, baseUrl)
       });
     } catch (error) {
       if (error.message === 'Gate pass not found') {
@@ -66,7 +69,7 @@ class GatePassController {
       res.status(201).json({
         success: true,
         message: 'Gate pass created successfully',
-        data: gatePass
+        data: gatePassService.serializeGatePass(gatePass, baseUrl)
       });
     } catch (error) {
       next(error);
@@ -89,7 +92,7 @@ class GatePassController {
       res.status(200).json({
         success: true,
         message: 'Gate pass updated successfully',
-        data: gatePass
+        data: gatePassService.serializeGatePass(gatePass, baseUrl)
       });
     } catch (error) {
       if (error.message === 'Gate pass not found') {

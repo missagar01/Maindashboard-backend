@@ -14,3 +14,6 @@ router.put('/:id', uploadGatePassPhoto, gatePassController.updateGatePass.bind(g
 router.delete('/:id', gatePassController.deleteGatePass.bind(gatePassController));
 
 module.exports = router;
+
+
+
