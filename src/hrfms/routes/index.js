@@ -7,6 +7,7 @@ const leaveRequestRoutes = require('../src/routes/leaveRequestRoutes');
 const resumeRoutes = require('../src/routes/resumeRoutes');
 const dashboardRoutes = require('../src/routes/dashboardRoutes');
 const planeVisitorRoutes = require('../src/routes/planeVisitorRoutes');
+const gatePassRoutes = require('../src/routes/gatePassRoutes');
 
 const router = express.Router();
 
@@ -26,5 +27,6 @@ router.use('/leave-requests', leaveRequestRoutes);
 router.use('/resumes', resumeRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/plant-visitors', planeVisitorRoutes);
+router.use('/gatepasses', gatePassRoutes);
 
 module.exports = router;

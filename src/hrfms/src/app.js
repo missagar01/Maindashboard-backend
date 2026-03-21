@@ -12,6 +12,7 @@ const leaveRequestRoutes = require('./routes/leaveRequestRoutes');
 const resumeRoutes = require('./routes/resumeRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const planeVisitorRoutes = require('./routes/planeVisitorRoutes');
+const gatePassRoutes = require('./routes/gatePassRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
 
@@ -89,6 +90,7 @@ app.use('/api/leave-requests', leaveRequestRoutes);
 app.use('/api/resumes', resumeRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/plant-visitors', planeVisitorRoutes);
+app.use('/api/gatepasses', gatePassRoutes);
 
 // 404 handler
 app.use(notFound);
