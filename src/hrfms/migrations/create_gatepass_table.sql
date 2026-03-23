@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS gatepass (
   name VARCHAR(100) NOT NULL,
   mobile_number VARCHAR(15) NOT NULL,
   department VARCHAR(150) NOT NULL,
-  employee_photo TEXT,
   employee_address TEXT,
   purpose_of_visit TEXT,
   reason TEXT,

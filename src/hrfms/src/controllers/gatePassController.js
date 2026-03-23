@@ -1,11 +1,6 @@
 const gatePassService = require('../services/gatePassService');
 
 class GatePassController {
-  buildBaseUrl(req) {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    return `${protocol}://${req.get('host')}`;
-  }
-
   normalizeBody(body) {
     if (body && typeof body === 'object') {
       return body;
@@ -24,12 +19,11 @@ class GatePassController {
 
   async getAllGatePasses(req, res, next) {
     try {
-      const baseUrl = this.buildBaseUrl(req);
       const gatePasses = await gatePassService.getAllGatePasses({
         scope: req.query?.scope,
         user: req.user
       });
-      const serializedGatePasses = gatePassService.serializeGatePassList(gatePasses, baseUrl);
+      const serializedGatePasses = gatePassService.serializeGatePassList(gatePasses);
       res.status(200).json({
         success: true,
         data: serializedGatePasses,
@@ -43,11 +37,10 @@ class GatePassController {
   async getGatePassById(req, res, next) {
     try {
       const { id } = req.params;
-      const baseUrl = this.buildBaseUrl(req);
       const gatePass = await gatePassService.getGatePassById(id);
       res.status(200).json({
         success: true,
-        data: gatePassService.serializeGatePass(gatePass, baseUrl)
+        data: gatePassService.serializeGatePass(gatePass)
       });
     } catch (error) {
       if (error.message === 'Gate pass not found') {
@@ -63,13 +56,12 @@ class GatePassController {
   async createGatePass(req, res, next) {
     try {
       const payload = this.normalizeBody(req.body) || {};
-      const baseUrl = this.buildBaseUrl(req);
 
-      const gatePass = await gatePassService.createGatePass(payload, req.file, baseUrl);
+      const gatePass = await gatePassService.createGatePass(payload);
       res.status(201).json({
         success: true,
         message: 'Gate pass created successfully',
-        data: gatePassService.serializeGatePass(gatePass, baseUrl)
+        data: gatePassService.serializeGatePass(gatePass)
       });
     } catch (error) {
       next(error);
@@ -80,19 +72,18 @@ class GatePassController {
     try {
       const { id } = req.params;
       const payload = this.normalizeBody(req.body) || {};
-      if (Object.keys(payload).length === 0 && !req.file) {
+      if (Object.keys(payload).length === 0) {
         return res.status(400).json({
           success: false,
           message: 'Request body is empty or invalid'
         });
       }
-      const baseUrl = this.buildBaseUrl(req);
 
-      const gatePass = await gatePassService.updateGatePass(id, payload, req.file, baseUrl);
+      const gatePass = await gatePassService.updateGatePass(id, payload);
       res.status(200).json({
         success: true,
         message: 'Gate pass updated successfully',
-        data: gatePassService.serializeGatePass(gatePass, baseUrl)
+        data: gatePassService.serializeGatePass(gatePass)
       });
     } catch (error) {
       if (error.message === 'Gate pass not found') {

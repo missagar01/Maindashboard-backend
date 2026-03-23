@@ -1,24 +1,24 @@
 const gatePassModel = require('../models/gatePassModel');
-const { getGatePassImageUrl, normalizeGatePassImageUrl } = require('../utils/gatePassUpload');
 
 class GatePassService {
-  serializeGatePass(gatePass, baseUrl) {
+  serializeGatePass(gatePass) {
     if (!gatePass || typeof gatePass !== 'object') {
       return gatePass;
     }
 
+    const { employee_photo, ...serializedGatePass } = gatePass;
+
     return {
-      ...gatePass,
-      employee_photo: normalizeGatePassImageUrl(gatePass.employee_photo, baseUrl)
+      ...serializedGatePass
     };
   }
 
-  serializeGatePassList(gatePasses, baseUrl) {
+  serializeGatePassList(gatePasses) {
     if (!Array.isArray(gatePasses)) {
       return [];
     }
 
-    return gatePasses.map((item) => this.serializeGatePass(item, baseUrl));
+    return gatePasses.map((item) => this.serializeGatePass(item));
   }
 
   async getAllGatePasses(options = {}) {
@@ -46,14 +46,11 @@ class GatePassService {
     return gatePass;
   }
 
-  async createGatePass(data, file, baseUrl) {
+  async createGatePass(data) {
     try {
-      const normalized = this.prepareNewGatePassData(data, file, baseUrl);
+      const normalized = this.prepareNewGatePassData(data);
       if (!normalized.department || typeof normalized.department !== 'string') {
         throw this.createValidationError('department is required');
-      }
-      if (!normalized.employee_photo || typeof normalized.employee_photo !== 'string') {
-        throw this.createValidationError('employee_photo is required');
       }
       this.validateGatePassData(normalized);
       return await gatePassModel.create(normalized);
@@ -65,13 +62,13 @@ class GatePassService {
     }
   }
 
-  async updateGatePass(id, data, file, baseUrl) {
+  async updateGatePass(id, data) {
     const existingGatePass = await gatePassModel.findById(id);
     if (!existingGatePass) {
       throw this.createNotFoundError('Gate pass not found');
     }
 
-    const normalized = this.prepareUpdateGatePassData(data, file, baseUrl);
+    const normalized = this.prepareUpdateGatePassData(data);
     const merged = { ...existingGatePass, ...normalized };
     this.validateGatePassData(merged);
 
@@ -87,8 +84,8 @@ class GatePassService {
     return gatePassModel.delete(id);
   }
 
-  prepareNewGatePassData(data, file, baseUrl) {
-    const normalized = this.normalizeGatePassData(data, { file, baseUrl });
+  prepareNewGatePassData(data) {
+    const normalized = this.normalizeGatePassData(data);
     if (normalized.hod_approval === null || normalized.hod_approval === undefined) {
       normalized.hod_approval = false;
     }
@@ -101,18 +98,17 @@ class GatePassService {
     return normalized;
   }
 
-  prepareUpdateGatePassData(data, file, baseUrl) {
-    return this.normalizeGatePassData(data, { forUpdate: true, file, baseUrl });
+  prepareUpdateGatePassData(data) {
+    return this.normalizeGatePassData(data, { forUpdate: true });
   }
 
   normalizeGatePassData(data, options = {}) {
-    const { forUpdate = false, file = null, baseUrl = '' } = options;
+    const { forUpdate = false } = options;
     const source = data && typeof data === 'object' ? data : {};
     const fields = [
       'name',
       'mobile_number',
       'department',
-      'employee_photo',
       'employee_address',
       'purpose_of_visit',
       'reason',
@@ -152,12 +148,6 @@ class GatePassService {
 
       normalized[field] = value;
     });
-
-    if (file && file.filename) {
-      normalized.employee_photo = getGatePassImageUrl(file.filename, baseUrl);
-    } else if (normalized.employee_photo) {
-      normalized.employee_photo = normalizeGatePassImageUrl(normalized.employee_photo, baseUrl);
-    }
 
     return normalized;
   }

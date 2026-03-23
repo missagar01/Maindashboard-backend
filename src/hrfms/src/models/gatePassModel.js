@@ -43,7 +43,6 @@ class GatePassModel {
         name,
         mobile_number,
         department,
-        employee_photo,
         employee_address,
         purpose_of_visit,
         reason,
@@ -55,7 +54,7 @@ class GatePassModel {
         created_at,
         updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
     `;
@@ -64,7 +63,6 @@ class GatePassModel {
       data.name,
       data.mobile_number,
       data.department,
-      data.employee_photo,
       data.employee_address,
       data.purpose_of_visit,
       data.reason,
@@ -86,17 +84,16 @@ class GatePassModel {
         name = COALESCE($1, name),
         mobile_number = COALESCE($2, mobile_number),
         department = COALESCE($3, department),
-        employee_photo = COALESCE($4, employee_photo),
-        employee_address = COALESCE($5, employee_address),
-        purpose_of_visit = COALESCE($6, purpose_of_visit),
-        reason = COALESCE($7, reason),
-        date_of_leave = COALESCE($8, date_of_leave),
-        time_of_entry = COALESCE($9, time_of_entry),
-        hod_approval = COALESCE($10, hod_approval),
-        status = COALESCE($11, status),
-        gate_pass_closed = COALESCE($12, gate_pass_closed),
+        employee_address = COALESCE($4, employee_address),
+        purpose_of_visit = COALESCE($5, purpose_of_visit),
+        reason = COALESCE($6, reason),
+        date_of_leave = COALESCE($7, date_of_leave),
+        time_of_entry = COALESCE($8, time_of_entry),
+        hod_approval = COALESCE($9, hod_approval),
+        status = COALESCE($10, status),
+        gate_pass_closed = COALESCE($11, gate_pass_closed),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $13
+      WHERE id = $12
       RETURNING *
     `;
 
@@ -104,7 +101,6 @@ class GatePassModel {
       data.name,
       data.mobile_number,
       data.department,
-      data.employee_photo,
       data.employee_address,
       data.purpose_of_visit,
       data.reason,
