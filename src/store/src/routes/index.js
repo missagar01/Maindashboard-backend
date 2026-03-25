@@ -21,6 +21,7 @@ import repairFollowupRoutes from "./repairFollowup.routes.js";
 import settingsRoutes from "./settings.routes.js";
 import storeGRNApproval from "./storeGRNApproval.routes.js";
 import departmentRoutes from "./department.routes.js";
+import divisionRoutes from "./division.routes.js";
 
 // Additional Oracle-backed routes
 import storeGRNRoutes from "./storeGRN.routes.js";
@@ -57,6 +58,7 @@ router.use("/repair-followup", repairFollowupRoutes);
 router.use("/settings", settingsRoutes);
 router.use("/store-grn-approval", storeGRNApproval);
 router.use("/departments", departmentRoutes);
+router.use("/division", divisionRoutes);
 
 export default router;
 

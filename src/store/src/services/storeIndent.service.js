@@ -107,24 +107,30 @@ export async function getHistory() {
       const conn = await getConnection();
       try {
         const sql = `
-        SELECT  t.vrno AS indent_no,
+        SELECT  t.lastupdate + INTERVAL '3' DAY AS plannedtimestamp,
+                t.vrno AS indent_number,
                 t.vrdate AS indent_date,
-                upper(lhs_utility.get_name('emp_code',(select b.createdby from indent_head b where b.vrno = t.vrno ))) as indenter,
+                upper(lhs_utility.get_name('emp_code',(select b.createdby from indent_head b where b.vrno = t.vrno ))) as indenter_name,
                 lhs_utility.get_name('div_code',  t.div_code)  AS division,
                 lhs_utility.get_name('dept_code', t.dept_code) AS department,
                 t.item_code,
                 t.item_name,
-                t.qtyindent,
+                t.qtyindent AS required_qty,
                 t.um,
                 t.acknowledgedate,
                 lhs_utility.get_name('user_code', t.acknowledgeby) AS purchaser,
+                t.purpose_remark AS remark,
+                UPPER(t.remark) AS specification,
+                lhs_utility.get_name('cost_code', t.cost_code) AS cost_project,
+                t.cancelleddate,
+                t.cancelled_remark,
 
                 -- PO numbers (comma separated)
                 ( SELECT LISTAGG(a.vrno, ', ') WITHIN GROUP (ORDER BY a.vrno)
                   FROM view_order_engine a
                   WHERE a.indent_vrno = t.vrno
                     AND a.item_code   = t.item_code
-                ) AS po_number,
+                ) AS po_no,
 
                 -- GRN numbers (comma separated)
                 ( SELECT LISTAGG(b.vrno, ', ') WITHIN GROUP (ORDER BY b.vrno)
