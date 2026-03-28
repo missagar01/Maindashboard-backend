@@ -1,6 +1,6 @@
 # MASTER_API
 
-Generated on: 2026-03-09T13:12:00.000Z
+Generated on: 2026-03-28T00:00:00.000Z
 
 ## Base URL
 - `http://localhost:3004`
@@ -40,7 +40,7 @@ Generated on: 2026-03-09T13:12:00.000Z
 ## Runtime Notes
 - `401` = token missing/invalid.
 - `500` DB connect error = route loaded, but DB/tunnel/network issue.
-- Quick mount check: `/api/store/health`, `/api/document/health`, `/api/master/health`, `/api/hrfms/health`, `/api/gatepass/health`, `/api/checklist/health`.
+- Quick mount check: `/api/store/health`, `/api/document/health`, `/api/master/health`, `/api/hrfms/health`, `/api/gatepass/health`, `/api/checklist/health`, `/api/project/health`.
 - `Checklist/Mainatce/Houskeeping` routes are JWT-protected. Use `Authorization: Bearer <TOKEN>` from login for every request.
 
 ## Shared Auth APIs (3)
@@ -441,6 +441,29 @@ Note: Same endpoints are also available via `/api/maintenance/...` alias. Token 
 | GET | `/api/master/user-score/:id` |
 | GET | `/api/master/user-score/test` |
 | PATCH | `/api/master/users/:id/emp-image` |
+
+## Project APIs (16)
+
+Note: Token required on all Project routes. Use shared login token in `Authorization: Bearer <TOKEN>`. Write endpoints with `auth.manager` require manager/admin access.
+
+| Method | Endpoint |
+|---|---|
+| GET | `/api/project/health` |
+| GET | `/api/projects` |
+| POST | `/api/projects` |
+| GET | `/api/work-areas/:projectId` |
+| POST | `/api/work-areas` |
+| GET | `/api/tasks` |
+| GET | `/api/tasks/:structureId` |
+| POST | `/api/tasks` |
+| GET | `/api/logs/:activityId` |
+| POST | `/api/logs` |
+| GET | `/api/materials` |
+| POST | `/api/materials` |
+| POST | `/api/materials/inward` |
+| POST | `/api/materials/consumption` |
+| GET | `/api/materials/logs` |
+| GET | `/api/analytics/operational-summary` |
 
 ## Gatepass APIs (23)
 
