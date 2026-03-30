@@ -169,26 +169,29 @@ if (DEVICE_SYNC_ENABLED) {
       } = await loadChecklistSyncModules();
 
       const mode = isMorningRun ? "Morning (11 AM)" : "Night (11 PM)";
-      console.log(`⏱ ${mode} Device Sync triggered`);
+      console.log(`⏱ ${mode} Attendance-Aware Sync triggered`);
 
-      // Pass the hour so logic knows which trigger to run
+      // 1. Precise Attendance-Based Sync (All Modules)
+      // This handles:
+      // - 11 AM: Yesterday's Evening Shift -> Yesterday's Tasks
+      // - 11 PM: Today's Morning Shift + Absentees -> Today's Tasks
       await refreshDeviceSync(undefined, hour);
 
-      // Trigger Housekeeping overdue task update (Morning only)
+      // 2. Scheduled Fallback: Cleanup older overdue tasks (task_start_date < today)
+      // Runs at 11 AM to ensure any missed tasks from previous days are finalized
       if (isMorningRun) {
-        console.log("🧹 Housekeeping Overdue Task Update triggered");
-        const count = await assignTaskService.markOverdueAsNotDone();
-        console.log(
-          `✅ Housekeeping Overdue Task Update completed. Updated ${count} tasks.`
-        );
-
-        // Blanket Overdue for Checklist & Maintenance
-        console.log("🧹 Checklist & Maintenance Overdue Update triggered");
+        console.log("🧹 Running Blanket Overdue Cleanup for all modules...");
+        
+        // Housekeeping (assign_task)
+        const hkCount = await assignTaskService.markOverdueAsNotDone();
+        
+        // Checklist & Maintenance
         const otherCounts = await markAllOverdueTasksAsNotDone();
-        console.log("✅ Checklist & Maintenance Overdue Update completed:", otherCounts);
+        
+        console.log(`✅ Cleanup completed | Housekeeping: ${hkCount} | Checklist/Maint:`, otherCounts);
       }
 
-      console.log(`✅ ${mode} Device Sync completed`);
+      console.log(`✅ ${mode} Attendance-Aware Sync completed`);
     } catch (err) {
       console.error("❌ DEVICE SYNC ERROR:", err);
     } finally {

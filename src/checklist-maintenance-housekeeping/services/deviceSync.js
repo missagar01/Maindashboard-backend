@@ -1,5 +1,6 @@
 import axios from "axios";
 import { pool, maintenancePool } from "../config/db.js";
+import { pool as housekeepingPool } from "../config/housekeppingdb.js";
 
 const LOG_DEVICE_SYNC = process.env.LOG_DEVICE_SYNC === "true";
 const logSync = (...args) => {
@@ -64,18 +65,19 @@ const shouldSkipSync = () => {
   return false;
 };
 
-const markChecklistTasksNotDone = async (employeeIds, targetDate, submissionTime) => {
-  if (!employeeIds?.length) return { checklistUpdated: 0, maintenanceUpdated: 0 };
+const batchMarkTasksAsNotDone = async (employeeIds, targetDate, submissionTime) => {
+  if (!employeeIds?.length) return { checklistUpdated: 0, maintenanceUpdated: 0, housekeepingUpdated: 0 };
 
   const normalizedEmployeeIds = [
     ...new Set(
       employeeIds
-        .map((id) => id ? String(id).trim().toLowerCase() : "")
+        .map((id) => (id ? String(id).trim().toLowerCase() : ""))
         .filter((v) => v.length > 0)
     ),
   ];
 
-  if (!normalizedEmployeeIds.length) return { checklistUpdated: 0, maintenanceUpdated: 0 };
+  if (!normalizedEmployeeIds.length)
+    return { checklistUpdated: 0, maintenanceUpdated: 0, housekeepingUpdated: 0 };
 
   const { rows } = await pool.query(
     `
@@ -92,7 +94,8 @@ const markChecklistTasksNotDone = async (employeeIds, targetDate, submissionTime
     ...new Set(rows.map((r) => r.user_name?.trim().toLowerCase()).filter(Boolean)),
   ];
 
-  if (!normalizedNames.length) return { checklistUpdated: 0, maintenanceUpdated: 0 };
+  if (!normalizedNames.length)
+    return { checklistUpdated: 0, maintenanceUpdated: 0, housekeepingUpdated: 0 };
 
   // 1. Update Checklist
   const checklistUpdateResult = await pool.query(
@@ -107,7 +110,7 @@ const markChecklistTasksNotDone = async (employeeIds, targetDate, submissionTime
         AND submission_date IS NULL
         AND status IS NULL
     `,
-    [normalizedNames, targetDate, submissionTime] // targetDate handles < Today logic explicitly
+    [normalizedNames, targetDate, submissionTime]
   );
 
   // 2. Update Maintenance Tasks
@@ -125,11 +128,30 @@ const markChecklistTasksNotDone = async (employeeIds, targetDate, submissionTime
     [normalizedNames, targetDate, submissionTime]
   );
 
-  logSync(`DEVICE SYNC: Updated for date ${targetDate} | Checklist: ${checklistUpdateResult.rowCount} | Maintenance: ${maintenanceUpdateResult.rowCount}`);
+  // 3. Update Housekeeping Tasks
+  const housekeepingUpdateResult = await housekeepingPool.query(
+    `
+      UPDATE assign_task
+      SET
+        status = 'no',
+        attachment = 'confirmed',
+        submission_date = $3,
+        delay = EXTRACT(DAY FROM ($3 - task_start_date))
+      WHERE (LOWER(name) = ANY($1::text[]) OR LOWER(doer_name2) = ANY($1::text[]))
+        AND task_start_date::date = $2::date
+        AND submission_date IS NULL
+    `,
+    [normalizedNames, targetDate, submissionTime]
+  );
+
+  logSync(
+    `BATCH SYNC: Updated for date ${targetDate} | Checklist: ${checklistUpdateResult.rowCount} | Maintenance: ${maintenanceUpdateResult.rowCount} | Housekeeping: ${housekeepingUpdateResult.rowCount}`
+  );
 
   return {
     checklistUpdated: checklistUpdateResult.rowCount,
-    maintenanceUpdated: maintenanceUpdateResult.rowCount
+    maintenanceUpdated: maintenanceUpdateResult.rowCount,
+    housekeepingUpdated: housekeepingUpdateResult.rowCount,
   };
 };
 
@@ -194,16 +216,14 @@ export const markAllOverdueTasksAsNotDone = async () => {
 
 const processLogs = async (allLogs, today, startHour) => {
   // startHour determined the mode.
-  // 11  -> Mode A (Yesterday Processing)
-  // 23  -> Mode B (Today Processing)
+  // 11  -> Mode A (Yesterday Evening Shift)
+  // 23  -> Mode B (Today Morning Shift & Absentees)
 
   const yesterday = getAdjacentDate(today, -1);
   const submissionTime = getSubmissionTime(startHour);
 
-  // empCode -> flags (Store only necessary info)
+  // empCode -> punches array
   const empActivity = new Map();
-  // We need to track IN punches
-  // Key: empCode, Value: { punches: [ { dateStr, hour, minute } ] }
 
   for (const log of allLogs) {
     const punch = String(log?.PunchDirection || "").trim().toLowerCase();
@@ -222,79 +242,67 @@ const processLogs = async (allLogs, today, startHour) => {
     });
   }
 
-  // --- LOGIC ---
   const usersToUpdate = new Set();
   let targetDate = today;
-  let triggerName = "";
+  let modeName = "";
 
   if (startHour === 11) {
-    // === 11:00 AM MODE (Yesterday) ===
+    // === Condition: Evening Shift Yesterday (6 PM - 10 PM) ===
+    // "if got the IN punches between evening 6 pm to 10 pm then set their pending tasks not done at next day morning 11 am."
     targetDate = yesterday;
-    triggerName = "11 AM (Yesterday Logic)";
-
-    // 1. Get List of Employees Present Yesterday
-    const employeesPresentYesterday = new Set();
-    const employeesWithEveningPunch = new Set(); // 6 PM - 9 PM Yesterday
+    modeName = "11 AM Trigger (Yesterday Evening Shift)";
 
     for (const [emp, punches] of empActivity.entries()) {
       for (const p of punches) {
         if (p.dateStr === yesterday) {
-          employeesPresentYesterday.add(emp);
-          // Condition: 18:00 <= punch <= 21:00 (Evening)
-          // "between 6:00 PM to 9:00 PM" => >= 18 && < 21 ?? Or <= 21? 
-          // Previous Requirement: "greater than 06 PM and smaller than 09 PM" -> 18 to 21 exclusive?
-          // New Requirement: "between 6:00 PM to 9:00 PM"
-          // Let's assume inclusive 18:00 to 21:00 (Exclusive of 21:01)
-          if (p.hour >= 18 && p.hour < 21) {
-            employeesWithEveningPunch.add(emp);
-          }
-        }
-      }
-    }
-
-    // Trigger A: Evening Punchers
-    employeesWithEveningPunch.forEach(e => usersToUpdate.add(e));
-
-    // Trigger B: Absent (No IN punch Yesterday)
-    const allActiveIds = await getAllActiveEmployeeIds();
-    const absentEmployees = allActiveIds.filter(id => !employeesPresentYesterday.has(id));
-
-    absentEmployees.forEach(e => usersToUpdate.add(e));
-
-    logSync(`${triggerName} | Evening Punchers: ${employeesWithEveningPunch.size} | Absent: ${absentEmployees.length}`);
-
-  } else if (startHour === 23) {
-    // === 11:00 PM MODE (Today) ===
-    targetDate = today;
-    triggerName = "11 PM (Today Logic)";
-
-    // Condition: Punch IN Today between 07:00 AM and 11:50 AM
-    for (const [emp, punches] of empActivity.entries()) {
-      for (const p of punches) {
-        if (p.dateStr === today) {
-          // Check 07:00 <= time <= 11:50
-          const totalMinutes = p.hour * 60 + p.minute;
-          const startLimit = 7 * 60;       // 07:00 -> 420
-          const endLimit = 11 * 60 + 50;   // 11:50 -> 710
-
-          if (totalMinutes >= startLimit && totalMinutes <= endLimit) {
+          // Check 6 PM (18:00) to 10 PM (22:00)
+          if (p.hour >= 18 && p.hour <= 22) {
             usersToUpdate.add(emp);
-            // Once found, valid for this user
             break;
           }
         }
       }
     }
+  } else if (startHour === 23) {
+    // === 11 PM Trigger (Today) ===
+    targetDate = today;
+    modeName = "11 PM Trigger (Morning Shift + Absentees)";
 
-    logSync(`${triggerName} | Morning Punchers (7:00-11:50): ${usersToUpdate.size}`);
+    const allActiveIds = await getAllActiveEmployeeIds();
+    const employeesPunchedToday = new Set();
+    const morningPunchersToday = new Set();
+
+    for (const [emp, punches] of empActivity.entries()) {
+      for (const p of punches) {
+        if (p.dateStr === today) {
+          employeesPunchedToday.add(emp);
+
+          // Rule 1: Morning Shift (7:00 AM - 11:50 AM)
+          const totalMinutes = p.hour * 60 + p.minute;
+          const startLimit = 7 * 60;       // 07:00
+          const endLimit = 11 * 60 + 50;   // 11:50
+          if (totalMinutes >= startLimit && totalMinutes <= endLimit) {
+            morningPunchersToday.add(emp);
+          }
+        }
+      }
+    }
+
+    // Combine: Morning Punchers + Absentees
+    const absenteesToday = allActiveIds.filter(id => !employeesPunchedToday.has(id));
+
+    morningPunchersToday.forEach(e => usersToUpdate.add(e));
+    absenteesToday.forEach(e => usersToUpdate.add(e));
+
+    logSync(`${modeName} | Morning Punchers: ${morningPunchersToday.size} | Absentees: ${absenteesToday.length}`);
   }
 
   // EXECUTE UPDATE
   const uniqueUsers = Array.from(usersToUpdate);
-  const result = await markChecklistTasksNotDone(uniqueUsers, targetDate, submissionTime);
+  const result = await batchMarkTasksAsNotDone(uniqueUsers, targetDate, submissionTime);
 
   return {
-    mode: triggerName,
+    mode: modeName,
     activeUsers: uniqueUsers.length,
     updated: result
   };
