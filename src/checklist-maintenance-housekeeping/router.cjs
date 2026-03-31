@@ -26,6 +26,7 @@ async function buildChecklistMaintenanceRouter() {
     departmentRoutesMod,
     maintenanceDashboardRoutesMod,
     housekeepingRoutesMod,
+    departmentTaskRoutesMod,
     authMiddlewareMod,
   ] = await Promise.all([
     import("./routes/dashboardRoutes.js"),
@@ -49,6 +50,7 @@ async function buildChecklistMaintenanceRouter() {
     import("./routes/maintenance-routes/departmentRoutes.js"),
     import("./routes/maintenance-routes/maintenanceDashboardRoutes.js"),
     import("./routes/housekepping-routes/index.js"),
+    import("./routes/departmentTaskRoutes.js"),
     import("./middleware/authMiddleware.js"),
   ]);
 
@@ -73,6 +75,7 @@ async function buildChecklistMaintenanceRouter() {
   const departmentRoutes = departmentRoutesMod.default;
   const maintenanceDashboardRoutes = maintenanceDashboardRoutesMod.default;
   const housekeepingRoutes = housekeepingRoutesMod.default;
+  const departmentTaskRoutes = departmentTaskRoutesMod.default;
   const authMiddleware = authMiddlewareMod.default;
 
   const mountedRouter = express.Router();
@@ -101,6 +104,7 @@ async function buildChecklistMaintenanceRouter() {
   mountedRouter.use("/checklist/logs", deviceRoutes);
   mountedRouter.use("/checklist/user-score", userScoreRoutes);
   mountedRouter.use("/checklist/add-new-task", addNewTaskRoutes);
+  mountedRouter.use("/checklist/department-tasks", departmentTaskRoutes);
 
   // Housekeeping APIs (user requested spelling)
   mountedRouter.use("/houskeeping", authMiddleware);

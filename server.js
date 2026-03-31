@@ -151,52 +151,51 @@ if (DEVICE_SYNC_ENABLED) {
     const hour = now.getHours();
     const minute = now.getMinutes();
 
-    // Run at 11:00 AM OR 11:00 PM (IST)
+    // Run ONLY at 11:00 AM (IST)
     // Allow 8-minute window (minute < 8)
     const isMorningRun = hour === 11;
-    const isNightRun = hour === 23;
 
-    if (!((isMorningRun || isNightRun) && minute < 8)) return;
+    if (!(isMorningRun && minute < 8)) return;
 
     if (isSyncRunning) return;
     isSyncRunning = true;
 
     try {
       const {
-        refreshDeviceSync,
         markAllOverdueTasksAsNotDone,
         assignTaskService,
       } = await loadChecklistSyncModules();
 
-      const mode = isMorningRun ? "Morning (11 AM)" : "Night (11 PM)";
-      console.log(`⏱ ${mode} Attendance-Aware Sync triggered`);
+      // Calculate IST Yesterday string (YYYY-MM-DD)
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const day = String(yesterday.getDate()).padStart(2, '0');
+      const month = String(yesterday.getMonth() + 1).padStart(2, '0');
+      const year = yesterday.getFullYear();
+      const yesterdayStr = `${year}-${month}-${day}`;
 
-      // 1. Precise Attendance-Based Sync (All Modules)
-      // This handles:
-      // - 11 AM: Yesterday's Evening Shift -> Yesterday's Tasks
-      // - 11 PM: Today's Morning Shift + Absentees -> Today's Tasks
-      await refreshDeviceSync(undefined, hour);
+      console.log(`⏱ Morning (11 AM) Task Cleanup triggered for ${yesterdayStr}`);
 
-      // 2. Scheduled Fallback: Cleanup older overdue tasks (task_start_date < today)
-      // Runs at 11 AM to ensure any missed tasks from previous days are finalized
-      if (isMorningRun) {
-        console.log("🧹 Running Blanket Overdue Cleanup for all modules...");
-        
-        // Housekeeping (assign_task)
-        const hkCount = await assignTaskService.markOverdueAsNotDone();
-        
-        // Checklist & Maintenance
-        const otherCounts = await markAllOverdueTasksAsNotDone();
-        
-        console.log(`✅ Cleanup completed | Housekeeping: ${hkCount} | Checklist/Maint:`, otherCounts);
-      }
+      // 1. Scheduled Cleanup: Mark YESTERDAY'S pending tasks as 'NOT DONE'
+      // This ensures any missed tasks from the previous day are finalized at 11 AM today.
+      console.log(`🧹 Running Task Cleanup for target date: ${yesterdayStr}...`);
 
-      console.log(`✅ ${mode} Attendance-Aware Sync completed`);
+      // Housekeeping (assign_task)
+      const hkCount = await assignTaskService.markOverdueAsNotDone(yesterdayStr);
+
+      // Checklist & Maintenance
+      const otherCounts = await markAllOverdueTasksAsNotDone(yesterdayStr);
+
+      console.log(`✅ Cleanup completed | Housekeeping: ${hkCount} | Checklist/Maint:`, otherCounts);
+
+      console.log(`✅ Morning Task Cleanup completed for ${yesterdayStr}`);
     } catch (err) {
-      console.error("❌ DEVICE SYNC ERROR:", err);
+      console.error("❌ TASK CLEANUP ERROR:", err);
     } finally {
       isSyncRunning = false;
     }
+
+
   };
 
   // Deploy mode me ye block execute hi nahi hota

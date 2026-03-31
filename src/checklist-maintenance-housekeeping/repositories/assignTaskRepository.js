@@ -1376,15 +1376,19 @@ class AssignTaskRepository {
     return Number(result.rows[0]?.count || 0);
   }
 
-  async updateOverdueTasks() {
+  async updateOverdueTasks(dateOverride = null) {
     if (useMemory) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
       let count = 0;
       this.records.forEach((task) => {
         if (!task.submission_date && task.task_start_date) {
           const start = new Date(task.task_start_date);
-          if (start < today) {
+          start.setHours(0, 0, 0, 0);
+          if (start.getTime() === yesterday.getTime()) {
             task.status = 'no';
             task.attachment = 'confirmed';
             task.submission_date = new Date().toISOString();
@@ -1397,11 +1401,15 @@ class AssignTaskRepository {
       return count;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = formatLocalDateString(today);
+    let yesterdayStr = dateOverride;
+    if (!yesterdayStr) {
+      const yesterday = new Date();
+      yesterday.setHours(0, 0, 0, 0);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterdayStr = formatLocalDateString(yesterday);
+    }
 
-    // Update criteria: submission_date is NULL and task_start_date < today
+    // Update criteria: submission_date is NULL and task_start_date matches target date
     // New values: status = 'no', attachment = 'confirmed', submission_date = NOW()
     const sql = `
       UPDATE assign_task
@@ -1412,12 +1420,14 @@ class AssignTaskRepository {
         delay = EXTRACT(DAY FROM (CURRENT_TIMESTAMP - task_start_date))
       WHERE submission_date IS NULL
         AND task_start_date IS NOT NULL
-        AND task_start_date::date < $1::date
+        AND task_start_date::date = $1::date
     `;
 
-    const result = await query(sql, [todayStr]);
+    const result = await query(sql, [yesterdayStr]);
     return result.rowCount || 0;
   }
+
+
 }
 
 const assignTaskRepository = new AssignTaskRepository();

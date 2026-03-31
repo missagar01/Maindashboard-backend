@@ -161,18 +161,24 @@ const batchMarkTasksAsNotDone = async (employeeIds, targetDate, submissionTime) 
  * Marks ALL tasks (Checklist & Maintenance) as "No" if they were missed.
  * This ensures triggers work in production even if biometric logs are missing.
  */
-export const markAllOverdueTasksAsNotDone = async () => {
-  // ✅ Force IST date for comparison
-  const now = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
-  );
-  now.setHours(0, 0, 0, 0); // Start of Today
+export const markAllOverdueTasksAsNotDone = async (dateStr = null) => {
+  let yesterdayStr = dateStr;
 
-  const targetDateStr = formatDateString(now);
+  if (!yesterdayStr) {
+    // Falls back to local IST calculation if no date provided
+    const now = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+    now.setHours(0, 0, 0, 0); // Start of Today
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterdayStr = formatDateString(yesterday);
+  }
+
   const submissionTime = new Date(); // Current system time for completion timestamp
 
   try {
-    // 1. Update Checklist (Overdue = task_start_date < today AND submission_date IS NULL)
+    // 1. Update Checklist (Target Specific Date)
     const checklistResult = await pool.query(
       `
         UPDATE checklist
@@ -180,28 +186,30 @@ export const markAllOverdueTasksAsNotDone = async () => {
           status = 'no',
           user_status_checklist = 'No',
           submission_date = $2
-        WHERE task_start_date::date < $1::date
+        WHERE task_start_date::date = $1::date
           AND submission_date IS NULL
           AND status IS NULL
       `,
-      [targetDateStr, submissionTime]
+      [yesterdayStr, submissionTime]
     );
 
-    // 2. Update Maintenance Tasks (Overdue = task_start_date < today AND actual_date IS NULL)
+    // 2. Update Maintenance Tasks (Target Specific Date)
     const maintenanceResult = await maintenancePool.query(
       `
         UPDATE maintenance_task_assign
         SET
           task_status = 'No',
           actual_date = $2
-        WHERE task_start_date::date < $1::date
+        WHERE task_start_date::date = $1::date
           AND actual_date IS NULL
           AND task_status IS NULL
       `,
-      [targetDateStr, submissionTime]
+      [yesterdayStr, submissionTime]
     );
 
-    logSync(`🧹 BLANKET OVERDUE: Updated | Checklist: ${checklistResult.rowCount} | Maintenance: ${maintenanceResult.rowCount}`);
+    logSync(`🧹 CLEANUP: Target Date ${yesterdayStr} | Checklist: ${checklistResult.rowCount} | Maintenance: ${maintenanceResult.rowCount}`);
+
+
 
     return {
       checklistUpdated: checklistResult.rowCount,

@@ -98,7 +98,7 @@ export const getStaffTasks = async (req, res) => {
     // Unified query to calculate scores for ALL filtered users
     const unifiedScoreQuery = `
       WITH filtered_users AS (
-          SELECT user_name, employee_id, department, division, email_id
+          SELECT user_name, employee_id, department, division, email_id, verify_access
           FROM public.users
           WHERE LOWER(role::text) = 'user'
             AND user_name IS NOT NULL
@@ -160,6 +160,7 @@ export const getStaffTasks = async (req, res) => {
               fu.department,
               fu.division,
               fu.email_id AS email,
+              fu.verify_access,
               COALESCE(s.total_tasks, 0) AS total_tasks,
               COALESCE(s.total_completed_tasks, 0) AS total_completed_tasks,
               COALESCE(s.checklist_total, 0) AS checklist_total,
@@ -187,6 +188,14 @@ export const getStaffTasks = async (req, res) => {
 
     // 3. Sort all data
     allRows.sort((a, b) => {
+      // Primary sort: has verify_access value (non-null, non-empty) first
+      const hasAccessA = a.verify_access && a.verify_access.trim() !== "";
+      const hasAccessB = b.verify_access && b.verify_access.trim() !== "";
+
+      if (hasAccessA && !hasAccessB) return -1;
+      if (!hasAccessA && hasAccessB) return 1;
+
+      // Secondary sort: original sorting logic
       let valA, valB;
 
       if (sortBy === 'score' || sortBy === 'completion_score') {
@@ -207,7 +216,7 @@ export const getStaffTasks = async (req, res) => {
       if (valA < valB) return sortOrder === 'desc' ? 1 : -1;
       if (valA > valB) return sortOrder === 'desc' ? -1 : 1;
 
-      // Secondary sort by name
+      // Tertiary sort: secondary sort by name
       if (sortBy !== 'name') {
         return (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
       }
@@ -232,6 +241,7 @@ export const getStaffTasks = async (req, res) => {
         email: row.email || `${nameKey.replace(/\s+/g, ".")}@example.com`,
         department: row.department,
         division: row.division,
+        verify_access: row.verify_access,
         totalTasks,
         completedTasks,
         doneOnTime: 0,

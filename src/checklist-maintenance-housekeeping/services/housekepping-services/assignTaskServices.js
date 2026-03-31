@@ -446,9 +446,10 @@ class AssignTaskService {
     };
   }
 
-  async markOverdueAsNotDone() {
-    return assignTaskRepository.updateOverdueTasks();
+  async markOverdueAsNotDone(targetDate = null) {
+    return assignTaskRepository.updateOverdueTasks(targetDate);
   }
+
 }
 
 const assignTaskService = new AssignTaskService();
