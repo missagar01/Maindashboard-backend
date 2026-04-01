@@ -1,5 +1,7 @@
 import { pool } from "../config/db.js";
 
+const KOLKATA_TIMESTAMP_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')`;
+
 // -----------------------------------------
 // 1️⃣ GET PENDING CHECKLIST
 // -----------------------------------------
@@ -239,7 +241,7 @@ export const submitChecklistRemarkAndUserStatus = async (req, res) => {
         }
 
         // ✅ AUTO TIMESTAMP
-        setClauses.push(`submission_date = NOW()`);
+        setClauses.push(`submission_date = ${KOLKATA_TIMESTAMP_SQL}`);
 
         values.push(item.taskId);
 
@@ -305,7 +307,7 @@ export const patchChecklistStatus = async (req, res) => {
       const sql = `
         UPDATE checklist
         SET status = $1,
-            submission_date = NOW()
+            submission_date = ${KOLKATA_TIMESTAMP_SQL}
         WHERE task_id = $2
       `;
 

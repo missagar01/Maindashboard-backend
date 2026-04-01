@@ -1,5 +1,7 @@
 import { pool } from "../config/db.js";
 
+const KOLKATA_TIMESTAMP_SQL = `(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')`;
+
 
 /* ------------------------------------------------------
    FETCH PENDING + EXTEND TASKS (delegation)
@@ -261,7 +263,7 @@ export const insertDelegationDoneAndUpdate = async (req, res) => {
       const updateQuery = `
         UPDATE delegation
         SET status = $1,
-            submission_date = NOW(),
+            submission_date = ${KOLKATA_TIMESTAMP_SQL},
             updated_at = NOW(),
             remarks = $2,
             planned_date = $3
