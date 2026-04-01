@@ -13,6 +13,7 @@ import uomRoutes from "./uom.routes.js";
 import costLocationRoutes from "./costLocation.routes.js";
 import stockRoutes from "./stockRoutes.js";
 import repairGatePassRoutes from "./repairGatePass.routes.js";
+import vendorRegistrationRoutes from "./vendorRegistration.routes.js";
 
 // Checklist PostgreSQL routes
 import indentRoutes from "./indent.routes.js";
@@ -44,6 +45,7 @@ router.use("/uom", uomRoutes);
 router.use("/cost-location", costLocationRoutes);
 router.use("/stock", stockRoutes);
 router.use("/repair-gate-pass", repairGatePassRoutes);
+router.use("/vendor-registration", vendorRegistrationRoutes);
 
 // Additional Oracle-backed routes
 router.use("/store-grn", storeGRNRoutes);
