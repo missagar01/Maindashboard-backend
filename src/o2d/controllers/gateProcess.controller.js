@@ -6,7 +6,6 @@ async function fetchGateProcessTimeline(req, res) {
     const entityCode = requestedEntity || "SR";
 
     const rows = await getGateProcessTimeline(entityCode);
-    console.log("Gate process timeline rows:", rows);
     res.status(200).json({
       success: true,
       entity: entityCode,

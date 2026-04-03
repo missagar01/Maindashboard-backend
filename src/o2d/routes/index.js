@@ -1,4 +1,6 @@
 const { Router } = require("express");
+const sharedAuthRoutes = require("../../auth/routes/login.routes.js");
+const { authenticate } = require("../middleware/auth.js");
 const gateProcessRoutes = require("./gateProcess.routes.js");
 const dashboardRoutes = require("./dashboard.routes.js");
 const pendingOrderRoutes = require("./pendingOrder.routes.js");
@@ -8,6 +10,9 @@ const followupRoutes = require("./followup.routes.js");
 const deliveryRoutes = require("./delivery.routes.js");
 
 const router = Router();
+
+router.use("/auth", sharedAuthRoutes);
+router.use(authenticate);
 
 router.use("/process", gateProcessRoutes);
 router.use("/dashboard", dashboardRoutes);
