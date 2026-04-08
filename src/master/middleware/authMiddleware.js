@@ -48,6 +48,43 @@ function getCookieToken(req) {
     }
 }
 
+function isDatabaseConnectivityError(error) {
+    if (!error) return false;
+
+    const message = String(error.message || error).toLowerCase();
+    const code = String(error.code || "").toUpperCase();
+
+    return (
+        ["ENOTFOUND", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "ECONNRESET"].includes(code) ||
+        message.includes("getaddrinfo enotfound") ||
+        message.includes("could not translate host name") ||
+        message.includes("connection terminated") ||
+        message.includes("connection timeout") ||
+        message.includes("timeout expired") ||
+        message.includes("failed to connect")
+    );
+}
+
+function buildUserFromToken(decoded) {
+    return {
+        id: decoded.id,
+        user_name: decoded.user_name || decoded.username || "",
+        role: decoded.role || "user",
+        email_id: decoded.email_id || "",
+        user_access: decoded.user_access || "",
+        user_access1: decoded.user_access1 || "",
+        page_access: decoded.page_access || "",
+        system_access: decoded.system_access || "",
+        verify_access: decoded.verify_access || "",
+        verify_access_dept: decoded.verify_access_dept || "",
+        employee_id: decoded.employee_id || "",
+        department: decoded.department || "",
+        designation: decoded.designation || "",
+        division: decoded.division || "",
+        auth_fallback: true,
+    };
+}
+
 export const protect = async (req, res, next) => {
     // Use Authorization header first so shared login token always wins.
     const token = getHeaderToken(req) || getCookieToken(req);
@@ -94,6 +131,12 @@ export const protect = async (req, res, next) => {
         return next();
     } catch (error) {
         console.error("Auth Middleware DB Error:", error);
+
+        if (decoded?.id && isDatabaseConnectivityError(error)) {
+            req.user = buildUserFromToken(decoded);
+            return next();
+        }
+
         error.statusCode = error.statusCode || 500;
         error.message = "Authorization check failed";
         return next(error);

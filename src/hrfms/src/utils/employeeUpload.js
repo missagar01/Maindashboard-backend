@@ -2,10 +2,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-const EMPLOYEE_UPLOAD_ROUTE = '/uploads/employees';
+const EMPLOYEE_UPLOAD_ROUTE = '/uploads/users';
 
 // Ensure uploads directory exists for employee images
-const uploadsDir = path.join(process.cwd(), 'uploads', 'employees');
+const uploadsDir = path.join(process.cwd(), 'uploads', 'users');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -18,8 +18,11 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
-    const fieldName = file.fieldname === 'profile_img' ? 'profile' : 'document';
-    cb(null, `employee-${fieldName}-${uniqueSuffix}${ext}`);
+    if (file.fieldname === 'profile_img') {
+      cb(null, `user-profile-${uniqueSuffix}${ext}`);
+    } else {
+      cb(null, `employee-document-${uniqueSuffix}${ext}`);
+    }
   }
 });
 
@@ -77,9 +80,17 @@ const normalizeEmployeeImagePath = (value) => {
     return null;
   }
 
-  const uploadPathMatch = normalizedValue.match(/\/uploads\/employees\/[^?#"'\s]+/i);
+  // Match any valid /uploads/ path (employees, users, etc.) â€” preserve as-is
+  const uploadPathMatch = normalizedValue.match(/\/uploads\/[^?#"'\s]+/i);
   if (uploadPathMatch) {
-    return uploadPathMatch[0];
+    const existingUploadPath = uploadPathMatch[0];
+    const filename = path.posix.basename(existingUploadPath.split(/[?#]/)[0]);
+
+    if (/^user-profile-/i.test(filename)) {
+      return `/uploads/users/${filename}`;
+    }
+
+    return existingUploadPath;
   }
 
   return buildEmployeeImagePath(normalizedValue);

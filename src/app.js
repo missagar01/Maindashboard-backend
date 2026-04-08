@@ -3,6 +3,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const compression = require("compression");
 const path = require("path");
+const fs = require("fs");
 
 const sharedAuthRoutes = require("./auth/routes/login.routes.js");
 const batchcodeApp = require("./batchcode/app.cjs");
@@ -137,6 +138,50 @@ app.use((req, res, next) => {
 // This allows images to be accessible at /uploads/... directly
 const uploadsPath = path.join(process.cwd(), "uploads");
 console.log('📁 Static uploads path:', uploadsPath);
+const resolveLegacyUploadAlias = (requestPath) => {
+  const normalizedRequestPath = String(requestPath || "")
+    .split("?")[0]
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+
+  if (!normalizedRequestPath) {
+    return null;
+  }
+
+  const segments = normalizedRequestPath.split("/").filter(Boolean);
+  if (segments.length < 2) {
+    return null;
+  }
+
+  const folder = String(segments[0] || "").toLowerCase();
+  const filename = path.posix.basename(segments[segments.length - 1] || "");
+
+  if (!filename) {
+    return null;
+  }
+
+  if (folder === "employees" && /^user-profile-/i.test(filename)) {
+    const aliasedFilePath = path.join(uploadsPath, "users", filename);
+    return fs.existsSync(aliasedFilePath) ? aliasedFilePath : null;
+  }
+
+  if (folder === "users" && /^employee-profile-/i.test(filename)) {
+    const aliasedFilePath = path.join(uploadsPath, "employees", filename);
+    return fs.existsSync(aliasedFilePath) ? aliasedFilePath : null;
+  }
+
+  return null;
+};
+
+app.use("/uploads", (req, res, next) => {
+  const aliasedFilePath = resolveLegacyUploadAlias(req.path);
+  if (!aliasedFilePath) {
+    return next();
+  }
+
+  return res.sendFile(aliasedFilePath);
+});
+
 app.use("/uploads", express.static(uploadsPath, {
   dotfiles: 'ignore',
   etag: true,

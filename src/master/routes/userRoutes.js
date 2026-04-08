@@ -1,11 +1,23 @@
 import express from "express";
-import { patchEmpImage } from "../controllers/userController.js";
+import { getEmpImage, getUserProfile, patchEmpImage } from "../controllers/userController.js";
 import upload from "../middleware/s3Upload2.js";
 import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 router.use(protect);
+
+router.get(
+    "/:id",
+    getUserProfile
+);
+
+router.get(
+    "/:id/emp-image",
+    getEmpImage
+);
+
+
 
 const uploadEmpImage = (req, res, next) => {
     if (req.is("multipart/form-data")) {
