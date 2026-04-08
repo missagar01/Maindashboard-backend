@@ -5,10 +5,15 @@ import {
     getVisitorByMobileService,
     sendVisitRequestWhatsappToGroup
 } from "../services/requestService.js";
-import { uploadToS3 } from "../middleware/s3Upload.js";
+import {
+    getVisitorPhotoPath,
+    removeVisitorPhotoFile
+} from "../middleware/s3Upload.js";
 import { buildFrontendUrl } from "../utils/frontendUrl.js";
 
 export const createVisitRequest = async (req, res, next) => {
+    let shouldCleanupVisitorPhoto = false;
+
     try {
         const {
             visitorName,
@@ -20,10 +25,6 @@ export const createVisitRequest = async (req, res, next) => {
             timeOfEntry
         } = req.body;
 
-        const visitorPhoto = req.file
-            ? await uploadToS3(req.file)
-            : null;
-
         if (
             !visitorName ||
             !mobileNumber ||
@@ -31,17 +32,25 @@ export const createVisitRequest = async (req, res, next) => {
             !dateOfVisit ||
             !timeOfEntry
         ) {
+            await removeVisitorPhotoFile(req.file);
             return res.status(400).json({
                 success: false,
                 message: "Missing required fields"
             });
         }
 
+        const visitorPhoto = req.file
+            ? getVisitorPhotoPath(req.file)
+            : null;
+        shouldCleanupVisitorPhoto = Boolean(visitorPhoto);
+
         const { visitorId, person } =
             await createVisitRequestService(
                 req.body,
                 visitorPhoto
             );
+        shouldCleanupVisitorPhoto = false;
+
         const approvalPageUrl = buildFrontendUrl(req, "/gatepass/approvals");
 
         await sendVisitRequestWhatsapp(person, {
@@ -68,6 +77,9 @@ export const createVisitRequest = async (req, res, next) => {
             message: "Visit request created successfully"
         });
     } catch (err) {
+        if (shouldCleanupVisitorPhoto) {
+            await removeVisitorPhotoFile(req.file);
+        }
         next(err);
     }
 };

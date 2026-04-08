@@ -1,45 +1,93 @@
+import fs from "fs";
+import path from "path";
 import multer from "multer";
-import { S3Client } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
-import dotenv from "dotenv";
 
-dotenv.config();
+const VISITOR_UPLOAD_ROUTE = "/uploads/visitors";
+const visitorUploadsDir = path.join(process.cwd(), "uploads", "visitors");
 
-// S3 Client
-const s3 = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+if (!fs.existsSync(visitorUploadsDir)) {
+    fs.mkdirSync(visitorUploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, visitorUploadsDir);
+    },
+    filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname || "").toLowerCase();
+        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+        cb(null, `visitor-${uniqueSuffix}${ext}`);
     }
 });
 
-// Multer (memory)
-const storage = multer.memoryStorage();
+const fileFilter = (_req, file, cb) => {
+    const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const mimetype = (file.mimetype || "").toLowerCase();
+
+    const isAllowedImage =
+        allowedImageTypes.test(ext) && allowedImageTypes.test(mimetype);
+
+    if (!isAllowedImage) {
+        return cb(
+            new Error("Visitor photo must be a JPEG, PNG, GIF, or WebP image.")
+        );
+    }
+
+    cb(null, true);
+};
 
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter
 });
 
-// Upload helper
-export const uploadToS3 = async (file) => {
-    const key = `visitors/${Date.now()}_${file.originalname}`;
+const normalizeUploadValue = (value) =>
+    String(value || "").trim().replace(/\\/g, "/");
 
-    const uploadTask = new Upload({
-        client: s3,
-        params: {
-            Bucket: process.env.AWS_BUCKET_NAME,
-            Key: key,
-            Body: file.buffer,
-            ContentType: file.mimetype
+export const getVisitorPhotoPath = (fileOrPath) => {
+    const rawValue =
+        typeof fileOrPath === "string"
+            ? fileOrPath
+            : fileOrPath?.filename || fileOrPath?.path || "";
+
+    const normalizedValue = normalizeUploadValue(rawValue);
+    if (!normalizedValue) {
+        return null;
+    }
+
+    const uploadPathMatch = normalizedValue.match(
+        /\/uploads\/visitors\/[^?#"'\s]+/i
+    );
+    if (uploadPathMatch) {
+        return uploadPathMatch[0];
+    }
+
+    const filename = path.posix.basename(normalizedValue.split(/[?#]/)[0]);
+    return filename ? `${VISITOR_UPLOAD_ROUTE}/${filename}` : null;
+};
+
+export const removeVisitorPhotoFile = async (fileOrPath) => {
+    const filePath =
+        typeof fileOrPath === "object" && fileOrPath?.path
+            ? fileOrPath.path
+            : path.join(
+                  process.cwd(),
+                  String(getVisitorPhotoPath(fileOrPath) || "").replace(/^\/+/, "")
+              );
+
+    if (!filePath) {
+        return;
+    }
+
+    try {
+        await fs.promises.unlink(filePath);
+    } catch (err) {
+        if (err.code !== "ENOENT") {
+            console.warn("Failed to remove visitor photo:", err.message);
         }
-    });
-
-    const result = await uploadTask.done();
-
-    // Public URL
-    return `https://${process.env.AWS_BUCKET_NAME}.s3.amazonaws.com/${key}`;
+    }
 };
 
 export default upload;
