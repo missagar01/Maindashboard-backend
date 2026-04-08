@@ -6,7 +6,7 @@ export const syncDeviceLogs = async (req, res) => {
     return res.json({
       success: true,
       message: "NotDone updated based on OUT punches",
-      syncResult, // 👈 helpful for debugging
+      syncResult,
     });
   } catch (error) {
     console.log("SYNC ERROR:", error);

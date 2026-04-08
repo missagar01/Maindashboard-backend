@@ -105,8 +105,8 @@ app.use(helmet({
 }));
 
 app.use(compression());
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Middleware to ensure CORS headers are set on all responses
 app.use((req, res, next) => {

@@ -1,10 +1,11 @@
-import { uploadToS3 } from "../middleware/s3Upload2.js";
+import { fileToDataUrl } from "../middleware/s3Upload2.js";
 import { updateEmpImageService } from "../services/userService.js";
 
 export const patchEmpImage = async (req, res, next) => {
     try {
         const { id } = req.params;
         const authUser = req.user;
+        const bodyProfileImageUrl = req.body?.profile_img;
 
         // AUTH CHECK: User can only update their own image, unless they are admin
         const isAdmin = authUser.role === "admin" || authUser.user_name === "admin";
@@ -14,18 +15,25 @@ export const patchEmpImage = async (req, res, next) => {
             return next(error);
         }
 
-        if (!req.file) {
-            return res.status(400).json({ message: "Image file is required" });
+        const profileImageUrl = req.file ? fileToDataUrl(req.file) : bodyProfileImageUrl;
+
+        if (!profileImageUrl || typeof profileImageUrl !== "string") {
+            return res.status(400).json({ message: "profile_img is required" });
         }
 
-        // Upload to S3
-        const imageUrl = await uploadToS3(req.file);
+        const normalizedProfileImageUrl = profileImageUrl.trim();
+        const isSupportedProfileImage = /^data:image\/(jpeg|jpg|png|gif|webp);base64,[A-Za-z0-9+/=]+$/i.test(
+            normalizedProfileImageUrl
+        );
 
-        // Update DB
-        const user = await updateEmpImageService(id, imageUrl);
+        if (!isSupportedProfileImage) {
+            return res.status(400).json({ message: "profile_img must be a valid image data URL" });
+        }
+
+        const user = await updateEmpImageService(id, normalizedProfileImageUrl);
 
         res.json({
-            message: "Employee image updated successfully",
+            message: "Profile image updated successfully",
             user,
         });
     } catch (err) {

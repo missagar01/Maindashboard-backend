@@ -1242,7 +1242,6 @@ Used by:
 
 Delete:
 
-- `DELETE /api/master/systems/:id`
 - no request body required
 
 ### User system access patch

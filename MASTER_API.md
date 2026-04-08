@@ -434,7 +434,6 @@ Note: Same endpoints are also available via `/api/maintenance/...` alias. Token 
 | PATCH | `/api/master/settings/users/:id/system_access` |
 | GET | `/api/master/systems` |
 | POST | `/api/master/systems` |
-| DELETE | `/api/master/systems/:id` |
 | GET | `/api/master/systems/:id` |
 | PUT | `/api/master/systems/:id` |
 | GET | `/api/master/user-score` |

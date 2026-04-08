@@ -1,40 +1,30 @@
 import multer from "multer";
-import { S3Client } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
-
-const s3 = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-});
 
 const storage = multer.memoryStorage();
+const allowedImageMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
 
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 }
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (!allowedImageMimeTypes.includes(file.mimetype)) {
+            const error = new Error("Invalid file format. Allowed formats: JPEG, PNG, GIF, WebP.");
+            error.statusCode = 400;
+            return cb(error);
+        }
+
+        cb(null, true);
+    }
 });
 
-// Upload helper
-export const uploadToS3 = async (file) => {
-    const key = `emp/${Date.now()}_${file.originalname}`;
+export const fileToDataUrl = (file) => {
+    if (!file?.buffer || !file?.mimetype) {
+        const error = new Error("Image file is required");
+        error.statusCode = 400;
+        throw error;
+    }
 
-    const uploadTask = new Upload({
-        client: s3,
-        params: {
-            Bucket: process.env.AWS_EMP_IMG_BUCKET_NAME,
-            Key: key,
-            Body: file.buffer,
-            ContentType: file.mimetype
-        }
-    });
-
-    const result = await uploadTask.done();
-
-    // Public URL
-    return `https://${process.env.AWS_EMP_IMG_BUCKET_NAME}.s3.amazonaws.com/${key}`;
+    return `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
 };
 
 export default upload;
