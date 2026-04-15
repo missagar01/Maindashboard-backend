@@ -14,6 +14,7 @@ const masterRoutes = require("./master/router.cjs");
 const gatepassRoutes = require("./gatepass/router.cjs");
 const storeRoutes = require("./store/router.cjs");
 const documentRoutes = require("./document/router.cjs");
+const transportRoutes = require("./transport/router.cjs");
 const checklistMaintenanceRoutes = require("./checklist-maintenance-housekeeping/router.cjs");
 const projectRoutes = require("./project/router.cjs");
 
@@ -89,6 +90,7 @@ apiRouter.use("/master", masterRoutes);
 apiRouter.use("/gatepass", gatepassRoutes);
 apiRouter.use("/store", storeRoutes);
 apiRouter.use("/document", documentRoutes);
+apiRouter.use("/transport", transportRoutes);
 apiRouter.use("/", checklistMaintenanceRoutes);
 apiRouter.use("/", projectRoutes);
 apiRouter.use("/auth", sharedAuthRoutes);
@@ -246,3 +248,5 @@ app.use((err, req, res, next) => {
 });
 
 module.exports = app;
+
+
