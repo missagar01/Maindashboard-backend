@@ -1,6 +1,41 @@
 import pool from "../config/db.js";
 import axios from "axios";
 
+const sendWhatsappText = async (toNumber, message, errorLabel) => {
+    if (!toNumber) {
+        return;
+    }
+
+    try {
+        await axios.post(
+            `${process.env.MAYTAPI_BASE_URL}/${process.env.MAYTAPI_PRODUCT_ID}/${process.env.MAYTAPI_PHONE_ID}/sendMessage`,
+            {
+                to_number: toNumber,
+                message,
+                type: "text"
+            },
+            {
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-maytapi-key": process.env.MAYTAPI_API_KEY
+                },
+                timeout: 10000
+            }
+        );
+    } catch (err) {
+        console.error(`${errorLabel}:`, err.message);
+    }
+};
+
+const normalizePhoneNumber = (phone) => {
+    const digits = String(phone || "").replace(/\D/g, "");
+    if (!digits) {
+        return "";
+    }
+
+    return digits.startsWith("91") ? digits : `91${digits}`;
+};
+
 export const fetchVisitsForApprovalService = async (personToMeet) => {
     try {
         const query = `
@@ -57,25 +92,47 @@ export const updateVisitApprovalService = async (id, status, approvedBy) => {
     }
 };
 
-export const sendApprovalWhatsappMessage = async (message) => {
+export const getPersonToMeetDetailsService = async (personToMeet) => {
     try {
-        await axios.post(
-            `${process.env.MAYTAPI_BASE_URL}/${process.env.MAYTAPI_PRODUCT_ID}/${process.env.MAYTAPI_PHONE_ID}/sendMessage`,
-            {
-                to_number: process.env.WHATSAPP_GROUP_ID,
-                message,
-                type: "text"
-            },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-maytapi-key": process.env.MAYTAPI_API_KEY
-                },
-                timeout: 10000
-            }
-        );
+        const query = `
+            SELECT person_to_meet, phone
+            FROM person_to_meet
+            WHERE LOWER(TRIM(person_to_meet)) = LOWER(TRIM($1))
+            LIMIT 1
+        `;
+
+        const { rows } = await pool.query(query, [personToMeet]);
+        return rows[0] || null;
     } catch (err) {
-        // Non-blocking error (won’t crash request)
-        console.error("⚠️WhatsApp send failed:", err.message);
+        err.message = "Failed to fetch person to meet details";
+        throw err;
     }
+};
+
+export const sendApprovalWhatsappMessage = async (message) => {
+    if (!process.env.WHATSAPP_GROUP_ID) {
+        console.warn("WhatsApp group skipped: WHATSAPP_GROUP_ID not found");
+        return;
+    }
+
+    await sendWhatsappText(
+        process.env.WHATSAPP_GROUP_ID,
+        message,
+        "WhatsApp group send failed"
+    );
+};
+
+export const sendClosePassLinkWhatsapp = async (person, message) => {
+    const phoneNumber = normalizePhoneNumber(person?.phone);
+
+    if (!phoneNumber) {
+        console.warn("Close link WhatsApp skipped: person or phone not found");
+        return;
+    }
+
+    await sendWhatsappText(
+        phoneNumber,
+        message,
+        "Close link WhatsApp send failed"
+    );
 };

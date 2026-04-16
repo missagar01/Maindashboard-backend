@@ -6,7 +6,17 @@ import {
 
 export const getGatePasses = async (req, res, next) => {
   try {
-    const data = await fetchGatePassesService();
+    const { personToMeet, showAll } = req.query;
+    const shouldShowAll = String(showAll || "").toLowerCase() === "true";
+
+    if (!shouldShowAll && !personToMeet) {
+      return res.status(400).json({
+        success: false,
+        message: "personToMeet required"
+      });
+    }
+
+    const data = await fetchGatePassesService(personToMeet, shouldShowAll);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -16,8 +26,17 @@ export const getGatePasses = async (req, res, next) => {
 export const closeGatePass = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { personToMeet, closedBy, showAll } = req.body;
+    const shouldShowAll = Boolean(showAll);
 
-    const visit = await closeGatePassService(id);
+    if (!shouldShowAll && !personToMeet) {
+      return res.status(400).json({
+        success: false,
+        message: "personToMeet required"
+      });
+    }
+
+    const visit = await closeGatePassService(id, personToMeet, shouldShowAll);
 
     const formattedVisitDate = new Date(
       visit.date_of_visit
@@ -35,16 +54,15 @@ export const closeGatePass = async (req, res, next) => {
       ? visit.time_of_entry.toString().slice(0, 5)
       : "-";
 
-
     const message = `
-🚪 *Gate Pass CLOSED*
-
-👤 *Visitor Name:* ${visit.visitor_name}
-👥 *Person To Meet:* ${visit.person_to_meet}
-📅 *Visit Date:* ${formattedVisitDate}
-⏰ *Time of Entry:* ${formattedEntryTime}
-⏰ *Exit Time:* ${formattedExitTime}
-🔒 *Gate Pass Status:* CLOSED
+*Gate Pass:* CLOSED
+*Visitor Name:* ${visit.visitor_name}
+*Person To Meet:* ${visit.person_to_meet}
+*Visit Date:* ${formattedVisitDate}
+*Time of Entry:* ${formattedEntryTime}
+*Exit Time:* ${formattedExitTime}
+*Closed By:* ${closedBy || personToMeet}
+*Status:* CLOSED
         `;
 
     await sendGateCloseWhatsappMessage(message);

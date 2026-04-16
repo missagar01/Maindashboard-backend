@@ -1,7 +1,9 @@
 import {
     fetchVisitsForApprovalService,
     updateVisitApprovalService,
-    sendApprovalWhatsappMessage
+    sendApprovalWhatsappMessage,
+    getPersonToMeetDetailsService,
+    sendClosePassLinkWhatsapp
 } from "../services/approveService.js";
 import { buildFrontendUrl } from "../utils/frontendUrl.js";
 
@@ -41,19 +43,32 @@ export const updateVisitApproval = async (req, res, next) => {
             status,
             approvedBy
         );
+        const person = await getPersonToMeetDetailsService(visit.person_to_meet);
         const closePassUrl = buildFrontendUrl(req, "/gatepass/close-pass");
+        const normalizedStatus = status.toUpperCase();
+        const groupMessageLines = [
+            `*Gate Pass:* ${normalizedStatus}`,
+            `*Visitor Name:* ${visit.visitor_name}`,
+            `*Person To Meet:* ${visit.person_to_meet}`,
+            `*Status:* ${normalizedStatus}`,
+            `*Approved By:* ${approvedBy}`
+        ];
+        const message = `\n${groupMessageLines.join("\n")}\n`;
 
-        const message = `
-*Gate Pass:* ${status.toUpperCase()}
+        await sendApprovalWhatsappMessage(message);
+
+        if (status === "approved") {
+            const closeLinkMessage = `
+*Gate Pass:* APPROVED
 *Visitor Name:* ${visit.visitor_name}
 *Person To Meet:* ${visit.person_to_meet}
-*Status:* ${status.toUpperCase()}
 *Approved By:* ${approvedBy}
 *Open Close Pass Page:*
 ${closePassUrl}
-        `;
+            `;
 
-        await sendApprovalWhatsappMessage(message);
+            await sendClosePassLinkWhatsapp(person, closeLinkMessage);
+        }
 
         res.json({ success: true });
     } catch (err) {

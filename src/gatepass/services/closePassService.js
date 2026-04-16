@@ -1,7 +1,7 @@
 import pool from "../config/db.js";
 import axios from "axios";
 
-export const fetchGatePassesService = async () => {
+export const fetchGatePassesService = async (personToMeet, showAll = false) => {
     try {
         const query = `
             SELECT
@@ -20,10 +20,13 @@ export const fetchGatePassesService = async () => {
                 gate_pass_closed
             FROM visitors
             WHERE approval_status IN ('approved','rejected')
+            ${showAll ? "" : "AND person_to_meet = $1"}
             ORDER BY created_at DESC
         `;
 
-        const { rows } = await pool.query(query);
+        const { rows } = showAll
+            ? await pool.query(query)
+            : await pool.query(query, [personToMeet]);
         return rows;
     } catch (err) {
         err.message = "Failed to fetch gate passes";
@@ -31,7 +34,7 @@ export const fetchGatePassesService = async () => {
     }
 };
 
-export const closeGatePassService = async (id) => {
+export const closeGatePassService = async (id, personToMeet, showAll = false) => {
     try {
         const query = `
             UPDATE visitors
@@ -40,6 +43,7 @@ export const closeGatePassService = async (id) => {
                 gate_pass_closed = true,
                 visitor_out_time = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::time
             WHERE id = $1
+              ${showAll ? "" : "AND person_to_meet = $2"}
             RETURNING
                 visitor_name,
                 person_to_meet,
@@ -48,7 +52,9 @@ export const closeGatePassService = async (id) => {
                 visitor_out_time
         `;
 
-        const result = await pool.query(query, [id]);
+        const result = showAll
+            ? await pool.query(query, [id])
+            : await pool.query(query, [id, personToMeet]);
 
         if (!result.rowCount) {
             const error = new Error("Visitor not found");
