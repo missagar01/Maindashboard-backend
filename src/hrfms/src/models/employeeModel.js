@@ -147,10 +147,11 @@ async function create(data) {
       designation, 
       role, 
       status, 
+      address,
       password,
       profile_img,
       document_img
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) 
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) 
     RETURNING * 
   `;
 
@@ -167,6 +168,7 @@ async function create(data) {
     data.designation,
     data.role,
     data.status,
+    data.address ?? null,
     data.password,
     data.profile_img || null,
     data.document_img || null
@@ -191,9 +193,10 @@ async function update(id, data) {
       status = $8, 
       password = COALESCE(NULLIF($9, ''), password),
       page_access = $10,
-      profile_img = COALESCE($11, profile_img),
-      document_img = COALESCE($12, document_img)
-    WHERE id = $13 
+      address = $11,
+      profile_img = COALESCE($12, profile_img),
+      document_img = COALESCE($13, document_img)
+    WHERE id = $14 
     RETURNING * 
   `;
 
@@ -211,6 +214,7 @@ async function update(id, data) {
     data.status,
     data.password || null,
     serializedPageAccess,
+    data.address ?? null,
     data.profile_img !== undefined ? data.profile_img : null,
     data.document_img !== undefined ? data.document_img : null,
     id

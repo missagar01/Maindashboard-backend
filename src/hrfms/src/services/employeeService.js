@@ -2,6 +2,8 @@ const employeeModel = require('../models/employeeModel');
 const { getEmployeeImagePath, normalizeEmployeeImagePath } = require('../utils/employeeUpload');
 const { invalidateCache, getOrSetCache } = require('../utils/cache');
 
+const PHONE_NUMBER_REGEX = /^\d{10}$/;
+
 class EmployeeService {
   async getAllEmployees() {
     return getOrSetCache('employees:all', 10, async () => {
@@ -28,6 +30,7 @@ class EmployeeService {
   async createEmployee(data, files, baseUrl) {
     try {
       this.validateEmployeeData(data);
+      data.number = this.normalizePhoneNumber(data.number ?? data.mobile_number);
 
       // Handle image uploads
       if (typeof data.page_access === 'string') {
@@ -67,6 +70,9 @@ class EmployeeService {
       const existingEmployee = await employeeModel.getById(id);
       if (!existingEmployee) {
         throw new Error('Employee not found');
+      }
+      if (data.number !== undefined || data.mobile_number !== undefined) {
+        data.number = this.normalizePhoneNumber(data.number ?? data.mobile_number);
       }
       if (typeof data.page_access === 'string') {
         try {
@@ -194,6 +200,28 @@ class EmployeeService {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (data.email_id && !emailRegex.test(data.email_id)) {
       throw new Error('Invalid email format');
+    }
+
+    this.assertValidPhoneNumber(data.number ?? data.mobile_number);
+  }
+
+  normalizePhoneNumber(value) {
+    const trimmedValue = String(value ?? '').trim();
+    if (!trimmedValue) {
+      return '';
+    }
+
+    return trimmedValue.replace(/\D/g, '');
+  }
+
+  assertValidPhoneNumber(value) {
+    const normalizedNumber = this.normalizePhoneNumber(value);
+    if (!normalizedNumber) {
+      return;
+    }
+
+    if (!PHONE_NUMBER_REGEX.test(normalizedNumber)) {
+      throw new Error('Phone number must be exactly 10 digits');
     }
   }
 }
