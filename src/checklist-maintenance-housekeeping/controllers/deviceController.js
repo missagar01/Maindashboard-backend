@@ -5,7 +5,7 @@ export const syncDeviceLogs = async (req, res) => {
     const syncResult = await refreshDeviceSync();
     return res.json({
       success: true,
-      message: "NotDone updated based on OUT punches",
+      message: "NotDone updated based on device IN punches",
       syncResult,
     });
   } catch (error) {

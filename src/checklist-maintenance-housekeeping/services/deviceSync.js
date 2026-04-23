@@ -5,6 +5,7 @@ import { pool as housekeepingPool } from "../config/housekeppingdb.js";
 const LOG_DEVICE_SYNC = process.env.LOG_DEVICE_SYNC === "true";
 const DEVICE_API_URL = process.env.DEVICE_API_URL;
 const DEVICE_API_KEY = process.env.API_KEY;
+const DEVICE_API_TIMEOUT_MS = Number(process.env.DEVICE_API_TIMEOUT_MS || 10_000);
 const DEVICE_SERIALS = String(process.env.DEVICE_SERIALS || "")
   .split(",")
   .map((value) => value.trim())
@@ -87,6 +88,58 @@ const shouldSkipSync = () => {
   if (inFlight) return true;
   if (now - lastSyncAt < MIN_GAP_MS) return true;
   return false;
+};
+
+const fetchLogsForSerial = async (serialNumber, fromDate, toDate) => {
+  const response = await axios.get(DEVICE_API_URL, {
+    timeout: DEVICE_API_TIMEOUT_MS,
+    params: {
+      APIKey: DEVICE_API_KEY,
+      SerialNumber: serialNumber,
+      FromDate: fromDate,
+      ToDate: toDate,
+    },
+  });
+
+  if (!Array.isArray(response.data)) {
+    throw new Error(`Device API returned invalid payload for serial ${serialNumber}`);
+  }
+
+  logSync(`DEVICE SYNC: Serial ${serialNumber} fetched ${response.data.length} logs`);
+  return response.data;
+};
+
+const fetchDeviceLogs = async (fromDate, toDate) => {
+  if (!DEVICE_API_URL || !DEVICE_API_KEY) {
+    throw new Error("Device API configuration is incomplete");
+  }
+
+  if (!DEVICE_SERIALS.length) {
+    throw new Error("DEVICE_SERIALS is empty");
+  }
+
+  const results = await Promise.allSettled(
+    DEVICE_SERIALS.map((serialNumber) =>
+      fetchLogsForSerial(serialNumber, fromDate, toDate)
+    )
+  );
+
+  const failedSerials = results
+    .map((result, index) => ({ result, serialNumber: DEVICE_SERIALS[index] }))
+    .filter(({ result }) => result.status === "rejected");
+
+  if (failedSerials.length > 0) {
+    const details = failedSerials
+      .map(
+        ({ serialNumber, result }) =>
+          `${serialNumber}: ${result.reason?.message || "Unknown error"}`
+      )
+      .join(" | ");
+
+    throw new Error(`Device API fetch failed. ${details}`);
+  }
+
+  return results.flatMap((result) => result.value);
 };
 
 const batchMarkTasksAsNotDone = async (employeeIds, targetDate, submissionTime) => {
@@ -367,35 +420,13 @@ export const refreshDeviceSync = async (today = formatDateString(new Date()), fo
   inFlight = (async () => {
     try {
       const yesterday = getAdjacentDate(today, -1);
-      const [inSerial, outSerial] = DEVICE_SERIALS;
+      const allLogs = await fetchDeviceLogs(yesterday, today);
 
-      const [inRes, outRes] = await Promise.all([
-        axios.get(DEVICE_API_URL, {
-          timeout: 3000,
-          params: {
-            APIKey: DEVICE_API_KEY,
-            SerialNumber: inSerial,
-            FromDate: yesterday,
-            ToDate: today,
-          },
-        }).catch(() => ({ data: [] })),
-        axios.get(DEVICE_API_URL, {
-          timeout: 3000,
-          params: {
-            APIKey: DEVICE_API_KEY,
-            SerialNumber: outSerial,
-            FromDate: yesterday,
-            ToDate: today,
-          },
-        }).catch(() => ({ data: [] })),
-      ]);
+      if (currentHour === 23 && allLogs.length === 0) {
+        throw new Error("Device API returned no logs for 11 PM sync; skipping to avoid false absentees");
+      }
 
-      const inLogs = Array.isArray(inRes.data) ? inRes.data : [];
-      const outLogs = Array.isArray(outRes.data) ? outRes.data : [];
-
-      logSync(`DEVICE SYNC: Fetched logs | IN: ${inLogs.length} | OUT: ${outLogs.length}`);
-
-      const allLogs = [...inLogs, ...outLogs];
+      logSync(`DEVICE SYNC: Fetched logs | Total: ${allLogs.length}`);
 
       // Pass hour to direct logic
       const result = await processLogs(allLogs, today, currentHour);

@@ -27,13 +27,10 @@ const DEPLOY_MODE = process.env.DEPLOY_MODE === "true";
 let checklistSyncModulesPromise = null;
 async function loadChecklistSyncModules() {
   if (!checklistSyncModulesPromise) {
-    checklistSyncModulesPromise = Promise.all([
-      import("./src/checklist-maintenance-housekeeping/services/deviceSync.js"),
-      import("./src/checklist-maintenance-housekeeping/services/housekepping-services/assignTaskServices.js"),
-    ]).then(([deviceSyncMod, assignTaskMod]) => ({
+    checklistSyncModulesPromise = import(
+      "./src/checklist-maintenance-housekeeping/services/deviceSync.js"
+    ).then((deviceSyncMod) => ({
       refreshDeviceSync: deviceSyncMod.refreshDeviceSync,
-      markAllOverdueTasksAsNotDone: deviceSyncMod.markAllOverdueTasksAsNotDone,
-      assignTaskService: assignTaskMod.assignTaskService,
     }));
   }
 
@@ -161,11 +158,7 @@ if (DEVICE_SYNC_ENABLED) {
     isSyncRunning = true;
 
     try {
-      const {
-        refreshDeviceSync,
-        markAllOverdueTasksAsNotDone,
-        assignTaskService,
-      } = await loadChecklistSyncModules();
+      const { refreshDeviceSync } = await loadChecklistSyncModules();
 
       const todayDay = String(now.getDate()).padStart(2, '0');
       const todayMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -187,23 +180,11 @@ if (DEVICE_SYNC_ENABLED) {
       const year = yesterday.getFullYear();
       const yesterdayStr = `${year}-${month}-${day}`;
 
-      console.log(`⏱ Morning (11 AM) Task Cleanup triggered for ${yesterdayStr}`);
-
-      // 1. Scheduled Cleanup: Mark YESTERDAY'S pending tasks as 'NOT DONE'
-      // This ensures any missed tasks from the previous day are finalized at 11 AM today.
-      console.log(`🧹 Running Task Cleanup for target date: ${yesterdayStr}...`);
-
-      // Housekeeping (assign_task)
-      const hkCount = await assignTaskService.markOverdueAsNotDone(yesterdayStr);
-
-      // Checklist & Maintenance
-      const otherCounts = await markAllOverdueTasksAsNotDone(yesterdayStr);
-
-      console.log(`✅ Cleanup completed | Housekeeping: ${hkCount} | Checklist/Maint:`, otherCounts);
-
-      console.log(`✅ Morning Task Cleanup completed for ${yesterdayStr}`);
+      console.log(`⏱ Morning (11 AM) Device Sync triggered for ${yesterdayStr}`);
+      const syncResult = await refreshDeviceSync(todayStr, 11);
+      console.log(`✅ Morning Device Sync completed for ${yesterdayStr}:`, syncResult);
     } catch (err) {
-      console.error("❌ TASK CLEANUP ERROR:", err);
+      console.error("❌ DEVICE SYNC ERROR:", err);
     } finally {
       isSyncRunning = false;
     }
