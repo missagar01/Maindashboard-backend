@@ -1,5 +1,20 @@
 import { pool } from "../config/db.js";
 
+const formatDateOnly = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getNextDate = (dateString = "") => {
+  const baseDate = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(baseDate.getTime())) return null;
+
+  baseDate.setDate(baseDate.getDate() + 1);
+  return formatDateOnly(baseDate);
+};
+
 const getMonthDateRange = (monthYear = "") => {
   if (!monthYear) return null;
 
@@ -25,18 +40,62 @@ const getMonthDateRange = (monthYear = "") => {
   };
 };
 
+const getDayDateRange = (dayValue = "") => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayValue)) return null;
+
+  const nextDate = getNextDate(dayValue);
+  if (!nextDate) return null;
+
+  return {
+    start: dayValue,
+    endExclusive: nextDate,
+  };
+};
+
+const getWeekDateRange = (weekStart = "") => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return null;
+
+  const startDate = new Date(`${weekStart}T00:00:00`);
+  if (Number.isNaN(startDate.getTime())) return null;
+
+  const dayOfWeek = startDate.getDay();
+  const normalizedDay = dayOfWeek === 0 ? 7 : dayOfWeek;
+  if (normalizedDay !== 1) return null;
+
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 7);
+
+  return {
+    start: weekStart,
+    endExclusive: formatDateOnly(endDate),
+  };
+};
+
 // ─────────────────────────────────────────────
 // Helper: build date range from monthYear param
 // ─────────────────────────────────────────────
-const resolveDateRange = (monthYear) => {
+const resolveDateRange = ({ monthYear = "", periodType = "month", periodValue = "" }) => {
   let startDate, endDate;
-  if (monthYear) {
-    const range = getMonthDateRange(monthYear);
+  const normalizedPeriodType = String(periodType || (monthYear ? "month" : "")).toLowerCase();
+  const effectivePeriodValue = periodValue || monthYear;
+
+  if (normalizedPeriodType === "day" && effectivePeriodValue) {
+    const range = getDayDateRange(effectivePeriodValue);
     if (range) {
       startDate = range.start;
-      const e = new Date(range.end);
-      e.setDate(e.getDate() + 1);
-      endDate = `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, "0")}-${String(e.getDate()).padStart(2, "0")}`;
+      endDate = range.endExclusive;
+    }
+  } else if (normalizedPeriodType === "week" && effectivePeriodValue) {
+    const range = getWeekDateRange(effectivePeriodValue);
+    if (range) {
+      startDate = range.start;
+      endDate = range.endExclusive;
+    }
+  } else if (effectivePeriodValue) {
+    const range = getMonthDateRange(effectivePeriodValue);
+    if (range) {
+      startDate = range.start;
+      endDate = getNextDate(range.end);
     }
   }
   if (!startDate) {
@@ -58,6 +117,8 @@ export const getStaffTasks = async (req, res) => {
       page = 1,
       limit = 50,
       monthYear = "",
+      periodType = "month",
+      periodValue = "",
       departmentFilter = "all",
       divisionFilter = "all",
       search = "",
@@ -68,7 +129,11 @@ export const getStaffTasks = async (req, res) => {
     const pageNumber = Math.max(Number(page) || 1, 1);
     const limitNumber = Math.max(Number(limit) || 50, 1);
 
-    const { startDate, endDate } = resolveDateRange(monthYear);
+    const { startDate, endDate } = resolveDateRange({
+      monthYear,
+      periodType,
+      periodValue,
+    });
 
     const queryParams = [startDate, endDate];
     let filterIdx = 3;
@@ -275,13 +340,19 @@ export const exportAllStaffTasks = async (req, res) => {
     const {
       staffFilter = "all",
       monthYear = "",
+      periodType = "month",
+      periodValue = "",
       departmentFilter = "all",
       divisionFilter = "all"
     } = req.query;
 
     const MAX_EXPORT_LIMIT = 10000;
 
-    const { startDate, endDate } = resolveDateRange(monthYear);
+    const { startDate, endDate } = resolveDateRange({
+      monthYear,
+      periodType,
+      periodValue,
+    });
 
     // Build optional filter conditions
     const queryParams = [startDate, endDate];
@@ -397,7 +468,12 @@ export const exportAllStaffTasks = async (req, res) => {
 // ─────────────────────────────────────────────
 export const getStaffCount = async (req, res) => {
   try {
-    const { departmentFilter = "all", divisionFilter = "all", search = "" } = req.query;
+    const {
+      staffFilter = "all",
+      departmentFilter = "all",
+      divisionFilter = "all",
+      search = ""
+    } = req.query;
 
     let query = `
       SELECT COUNT(*) FROM users
@@ -415,6 +491,11 @@ export const getStaffCount = async (req, res) => {
     if (divisionFilter && divisionFilter !== "all") {
       params.push(divisionFilter);
       query += ` AND LOWER(division) = LOWER($${params.length})`;
+    }
+
+    if (staffFilter && staffFilter !== "all") {
+      params.push(staffFilter);
+      query += ` AND LOWER(user_name) = LOWER($${params.length})`;
     }
 
     if (search && search.trim()) {
