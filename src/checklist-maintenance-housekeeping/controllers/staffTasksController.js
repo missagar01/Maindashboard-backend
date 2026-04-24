@@ -71,11 +71,52 @@ const getWeekDateRange = (weekStart = "") => {
   };
 };
 
+const getExplicitDateRange = (inputStartDate = "", inputEndDate = "") => {
+  const startValue = /^\d{4}-\d{2}-\d{2}$/.test(inputStartDate)
+    ? inputStartDate
+    : "";
+  const endValue = /^\d{4}-\d{2}-\d{2}$/.test(inputEndDate)
+    ? inputEndDate
+    : "";
+
+  if (!startValue && !endValue) return null;
+
+  const startDate = new Date(`${startValue || endValue}T00:00:00`);
+  const endDate = new Date(`${endValue || startValue}T00:00:00`);
+
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return null;
+  }
+
+  const normalizedStart = startDate <= endDate ? startDate : endDate;
+  const normalizedEnd = startDate <= endDate ? endDate : startDate;
+  const normalizedEndValue = formatDateOnly(normalizedEnd);
+
+  return {
+    start: formatDateOnly(normalizedStart),
+    endExclusive: getNextDate(normalizedEndValue),
+  };
+};
+
 // ─────────────────────────────────────────────
 // Helper: build date range from monthYear param
 // ─────────────────────────────────────────────
-const resolveDateRange = ({ monthYear = "", periodType = "month", periodValue = "" }) => {
+const resolveDateRange = ({
+  startDate: inputStartDate = "",
+  endDate: inputEndDate = "",
+  monthYear = "",
+  periodType = "month",
+  periodValue = "",
+}) => {
   let startDate, endDate;
+  const explicitRange = getExplicitDateRange(inputStartDate, inputEndDate);
+  if (explicitRange) {
+    return {
+      startDate: explicitRange.start,
+      endDate: explicitRange.endExclusive,
+    };
+  }
+
   const normalizedPeriodType = String(periodType || (monthYear ? "month" : "")).toLowerCase();
   const effectivePeriodValue = periodValue || monthYear;
 
@@ -116,6 +157,8 @@ export const getStaffTasks = async (req, res) => {
       staffFilter = "all",
       page = 1,
       limit = 50,
+      startDate: inputStartDate = "",
+      endDate: inputEndDate = "",
       monthYear = "",
       periodType = "month",
       periodValue = "",
@@ -130,6 +173,8 @@ export const getStaffTasks = async (req, res) => {
     const limitNumber = Math.max(Number(limit) || 50, 1);
 
     const { startDate, endDate } = resolveDateRange({
+      startDate: inputStartDate,
+      endDate: inputEndDate,
       monthYear,
       periodType,
       periodValue,
@@ -339,6 +384,8 @@ export const exportAllStaffTasks = async (req, res) => {
   try {
     const {
       staffFilter = "all",
+      startDate: inputStartDate = "",
+      endDate: inputEndDate = "",
       monthYear = "",
       periodType = "month",
       periodValue = "",
@@ -349,6 +396,8 @@ export const exportAllStaffTasks = async (req, res) => {
     const MAX_EXPORT_LIMIT = 10000;
 
     const { startDate, endDate } = resolveDateRange({
+      startDate: inputStartDate,
+      endDate: inputEndDate,
       monthYear,
       periodType,
       periodValue,
