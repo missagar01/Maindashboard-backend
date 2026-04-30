@@ -2,7 +2,7 @@ import { getConnection } from "../config/db.js";
 import oracledb from "../config/oracleClient.js";
 import { getOrSetCache, cacheKeys, DEFAULT_TTL } from "./redisCache.js";
 
-const RETURNABLE_FROM_DATE = "TO_DATE('01-FEB-2026', 'DD-MON-YYYY')";
+const RETURNABLE_FROM_DATE = "TO_DATE('01-APR-2025', 'DD-MON-YYYY')";
 const RETURNABLE_SOURCE_CTE = `
   WITH issued_rows AS (
     SELECT
